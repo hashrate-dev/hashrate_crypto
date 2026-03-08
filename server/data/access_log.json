@@ -1,0 +1,30 @@
+[
+  {
+    "user_id": 500010,
+    "email": "jlvilasoler@hotmail.com",
+    "first_name": "Jose",
+    "first_surname": "Vila",
+    "at": "2026-03-08T06:06:18.293Z"
+  },
+  {
+    "user_id": 500011,
+    "email": "jv@hashrate.space",
+    "first_name": "JL",
+    "first_surname": "VS",
+    "at": "2026-03-08T07:08:47.785Z"
+  },
+  {
+    "user_id": 500010,
+    "email": "jlvilasoler@hotmail.com",
+    "first_name": "Jose",
+    "first_surname": "Vila",
+    "at": "2026-03-08T07:19:53.566Z"
+  },
+  {
+    "user_id": 500011,
+    "email": "jv@hashrate.space",
+    "first_name": "JL",
+    "first_surname": "VS",
+    "at": "2026-03-08T07:20:07.622Z"
+  }
+]

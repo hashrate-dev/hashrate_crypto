@@ -1,0 +1,448 @@
+import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ArrowLeft, Copy, Check, KeyRound, AlertTriangle, Link2, Lock, Eye, EyeOff } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { generateSeedPhraseAndWallets, type DerivedWallets } from '../lib/seedPhrase'
+import { encryptSeed, decryptSeed } from '../lib/seedEncryption'
+import { useAuth } from '../context/AuthContext'
+import { updateUserWallets, getEncryptedSeed } from '../api/users'
+
+type PasswordPurpose = 'link' | 'view' | 'replace'
+
+function AnimatedPhrase({ phrase, className = '' }: { phrase: string; className?: string }) {
+  const words = phrase.trim().split(/\s+/).filter(Boolean)
+  return (
+    <div className={`font-mono text-sm flex flex-wrap gap-2 ${className}`}>
+      {words.map((word, i) => (
+        <motion.span
+          key={`${i}-${word}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: i * 0.07, ease: [0.22, 1, 0.36, 1] }}
+          className="inline-block px-3 py-1.5 rounded-lg border border-emerald-500/60 bg-emerald-500/5"
+        >
+          {word}
+        </motion.span>
+      ))}
+    </div>
+  )
+}
+
+export function SeedPhraseGenerator() {
+  const { user, setUser } = useAuth()
+  const [result, setResult] = useState<DerivedWallets | null>(null)
+  const [copied, setCopied] = useState<'phrase' | 'btc' | 'eth' | 'doge' | 'ln' | null>(null)
+  const [revealed, setRevealed] = useState(false)
+  const [linking, setLinking] = useState(false)
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const [linked, setLinked] = useState(false)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [passwordPurpose, setPasswordPurpose] = useState<PasswordPurpose>('link')
+  const [passwordValue, setPasswordValue] = useState('')
+  const [viewedPhrase, setViewedPhrase] = useState<string | null>(null)
+  const [replaceResult, setReplaceResult] = useState<DerivedWallets | null>(null)
+
+  const handleGenerate = () => {
+    const derived = generateSeedPhraseAndWallets()
+    setResult(derived)
+    setRevealed(false)
+    setLinked(false)
+    setLinkError(null)
+    setViewedPhrase(null)
+    setReplaceResult(null)
+  }
+
+  const copy = (text: string, key: 'phrase' | 'btc' | 'eth' | 'doge' | 'ln') => {
+    navigator.clipboard.writeText(text)
+    setCopied(key)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
+  const copyLinked = (text: string, key: 'btc' | 'eth' | 'doge') => {
+    navigator.clipboard.writeText(text)
+    setCopied(key)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
+  const openPasswordModal = (purpose: PasswordPurpose) => {
+    setLinkError(null)
+    setPasswordValue('')
+    setPasswordPurpose(purpose)
+    setShowPasswordModal(true)
+  }
+
+  const handlePasswordSubmit = async () => {
+    if (!user || !passwordValue.trim()) return
+    setLinkError(null)
+    setLinking(true)
+    try {
+      if (passwordPurpose === 'link' && result) {
+        const { salt, encrypted } = await encryptSeed(result.mnemonic, passwordValue.trim())
+        const { user: updated } = await updateUserWallets(user.id, {
+          btcAddress: result.btcAddress,
+          usdtAddress: result.ethAddress,
+          dogeAddress: result.dogeAddress,
+          encryptedSeed: encrypted,
+          seedSalt: salt,
+        })
+        setUser(updated)
+        setLinked(true)
+        setShowPasswordModal(false)
+      } else if (passwordPurpose === 'view') {
+        const { encryptedSeed, seedSalt } = await getEncryptedSeed(user.id)
+        const phrase = await decryptSeed(encryptedSeed, seedSalt, passwordValue.trim())
+        setViewedPhrase(phrase)
+        setShowPasswordModal(false)
+      } else if (passwordPurpose === 'replace') {
+        const derived = generateSeedPhraseAndWallets()
+        const { salt, encrypted } = await encryptSeed(derived.mnemonic, passwordValue.trim())
+        const { user: updated } = await updateUserWallets(user.id, {
+          btcAddress: derived.btcAddress,
+          usdtAddress: derived.ethAddress,
+          dogeAddress: derived.dogeAddress,
+          encryptedSeed: encrypted,
+          seedSalt: salt,
+          password: passwordValue.trim(),
+        })
+        setUser(updated)
+        setReplaceResult(derived)
+        setShowPasswordModal(false)
+      }
+    } catch (e) {
+      setLinkError(e instanceof Error ? e.message : 'Contraseña incorrecta o error.')
+    } finally {
+      setLinking(false)
+    }
+  }
+
+  const alreadyHasLinkedWallets = Boolean(user?.btcAddress?.trim() || user?.usdtAddress?.trim() || user?.dogeAddress?.trim())
+
+  return (
+    <div className="px-4 pt-6 pb-8">
+      <AnimatePresence>
+        {showPasswordModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+            onClick={() => !linking && setShowPasswordModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm glass rounded-2xl border border-white/10 overflow-hidden shadow-xl"
+            >
+              <div className="p-6">
+                <div className="w-12 h-12 rounded-full bg-exodus/20 flex items-center justify-center mx-auto mb-4">
+                  <Lock className="w-6 h-6 text-exodus" />
+                </div>
+                <h3 className="text-lg font-semibold text-white text-center mb-1">
+                  {passwordPurpose === 'link' && 'Contraseña para vincular'}
+                  {passwordPurpose === 'view' && 'Ver frase semilla'}
+                  {passwordPurpose === 'replace' && 'Resetear frase semilla'}
+                </h3>
+                <p className="text-white/60 text-sm text-center mb-4">
+                  {passwordPurpose === 'link' && 'Ingresá tu contraseña para vincular y poder ver la frase cuando quieras.'}
+                  {passwordPurpose === 'view' && 'Ingresá tu contraseña para ver tu frase de 12 palabras.'}
+                  {passwordPurpose === 'replace' && 'Ingresá tu contraseña para resetear y vincular una nueva frase. Las direcciones anteriores se reemplazarán.'}
+                </p>
+                <input
+                  type="password"
+                  value={passwordValue}
+                  onChange={(e) => setPasswordValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handlePasswordSubmit()
+                  }}
+                  placeholder="Contraseña"
+                  className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-exodus/50 mb-4"
+                  autoFocus
+                />
+                {linkError && <p className="text-rose-400 text-sm mb-3">{linkError}</p>}
+              </div>
+              <div className="flex gap-3 p-4 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => !linking && setShowPasswordModal(false)}
+                  disabled={linking}
+                  className="flex-1 py-3 rounded-xl border border-white/20 text-white/80 font-medium hover:bg-white/5 transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePasswordSubmit}
+                  disabled={linking || !passwordValue.trim()}
+                  className="flex-1 py-3 rounded-xl bg-exodus text-white font-medium hover:bg-exodus-dark transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {linking ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Aceptar'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex items-center gap-3 mb-8">
+        <Link to="/settings" className="p-2 -ml-2 rounded-xl hover:bg-white/5 transition-colors">
+          <ArrowLeft className="w-5 h-5 text-white/80" />
+        </Link>
+        <h1 className="text-xl font-bold text-white">Frase semilla</h1>
+      </div>
+
+      {alreadyHasLinkedWallets ? (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex gap-3">
+            <Lock className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-white/70 text-sm">
+              Esta cuenta tiene una frase semilla vinculada. Podés verla cuando quieras ingresando tu contraseña, o generar una nueva (se pedirá contraseña).
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => (viewedPhrase ? setViewedPhrase(null) : openPasswordModal('view'))}
+            className={`w-full py-4 rounded-2xl font-medium flex items-center justify-center gap-2 transition-colors ${
+              viewedPhrase
+                ? 'border border-exodus/60 bg-exodus/10 text-exodus hover:bg-exodus/20'
+                : 'bg-white/10 border border-white/10 text-white hover:bg-white/15'
+            }`}
+          >
+            {viewedPhrase ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            {viewedPhrase ? 'Ocultar frase semilla' : 'Ver frase semilla'}
+          </button>
+
+          {viewedPhrase && (
+            <>
+              <div className="space-y-3">
+                <p className="text-white/60 text-sm">Frase de 12 palabras</p>
+                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+                  <AnimatedPhrase phrase={viewedPhrase} className="text-white" />
+                  <button type="button" onClick={() => copy(viewedPhrase, 'phrase')} className="mt-2 flex items-center gap-2 text-white/60 hover:text-white text-xs">
+                    {copied === 'phrase' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    {copied === 'phrase' ? 'Copiado' : 'Copiar frase'}
+                  </button>
+                </div>
+              </div>
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.15 }}
+                className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-3"
+              >
+                <p className="text-emerald-200 font-medium text-sm">Wallets conectadas</p>
+                <p className="text-white/70 text-xs">Direcciones vinculadas a tu cuenta a partir de esta frase.</p>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-white/60 text-xs mb-1">Bitcoin (red base)</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{user?.btcAddress ?? ''}</code>
+                      <button type="button" onClick={() => user?.btcAddress && copyLinked(user.btcAddress, 'btc')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                        {copied === 'btc' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-white/60 text-xs mb-1">Ethereum (USDT / ERC-20)</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{user?.usdtAddress ?? ''}</code>
+                      <button type="button" onClick={() => user?.usdtAddress && copyLinked(user.usdtAddress, 'eth')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                        {copied === 'eth' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-white/60 text-xs mb-1">Dogecoin</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{user?.dogeAddress ?? ''}</code>
+                      <button type="button" onClick={() => user?.dogeAddress && copyLinked(user.dogeAddress, 'doge')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                        {copied === 'doge' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-white/60 text-xs mb-1">Lightning</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{user?.lightningAddress || user?.email || ''}</code>
+                      <button type="button" onClick={() => copy(user?.lightningAddress || user?.email || '', 'ln')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                        {copied === 'ln' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </>
+          )}
+
+          {replaceResult && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="space-y-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4"
+            >
+              <p className="text-emerald-200 font-medium text-sm">Nueva frase vinculada. Guardala en un lugar seguro.</p>
+              <AnimatedPhrase phrase={replaceResult.mnemonic} className="text-white" />
+              <button type="button" onClick={() => copy(replaceResult.mnemonic, 'phrase')} className="flex items-center gap-2 text-white/80 text-xs">
+                {copied === 'phrase' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {copied === 'phrase' ? 'Copiado' : 'Copiar frase'}
+              </button>
+              <p className="text-white/60 text-xs mt-2">Bitcoin: {replaceResult.btcAddress}</p>
+              <p className="text-white/60 text-xs">Ethereum: {replaceResult.ethAddress}</p>
+              <p className="text-white/60 text-xs">Dogecoin: {replaceResult.dogeAddress}</p>
+            </motion.div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => openPasswordModal('replace')}
+            className="mt-10 w-full py-4 rounded-2xl border border-amber-500/60 bg-amber-500/10 text-amber-400 font-medium flex items-center justify-center gap-2 hover:bg-amber-500/20 transition-colors"
+          >
+            <KeyRound className="w-5 h-5" />
+            Resetear frase semilla
+          </button>
+        </motion.div>
+      ) : (
+        <>
+          <p className="text-white/60 text-sm mb-6">
+            Generá una nueva frase de 12 palabras. A partir de ella se derivan automáticamente las direcciones de Bitcoin y Ethereum (USDT). Guardá la frase en un lugar seguro; quien la tenga controla los fondos. Solo podés vincular una frase por cuenta.
+          </p>
+
+      {!result ? (
+        <motion.button
+          type="button"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          onClick={handleGenerate}
+          className="w-full py-4 rounded-2xl bg-exodus text-white font-semibold flex items-center justify-center gap-2 hover:bg-exodus-dark transition-colors"
+        >
+          <KeyRound className="w-5 h-5" />
+          Generar frase semilla y preparar wallets
+        </motion.button>
+      ) : (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6"
+        >
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-sm text-amber-200/90">
+              <p className="font-medium mb-1">Guardá esta frase en un lugar seguro.</p>
+              <p className="text-amber-200/70">No la compartas con nadie. Si vinculás con tu contraseña, la app la guardará cifrada y podrás verla cuando quieras ingresándola.</p>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-white/60 text-sm mb-2">Frase de 12 palabras</p>
+            <div className="glass rounded-2xl border border-white/5 p-4">
+              {revealed ? (
+                <AnimatedPhrase phrase={result.mnemonic} className="text-white" />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setRevealed(true)}
+                  className="text-exodus font-medium text-sm hover:underline"
+                >
+                  Mostrar frase
+                </button>
+              )}
+              {revealed && (
+                <button
+                  type="button"
+                  onClick={() => copy(result.mnemonic, 'phrase')}
+                  className="mt-2 flex items-center gap-2 text-white/60 hover:text-white text-xs"
+                >
+                  {copied === 'phrase' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copied === 'phrase' ? 'Copiado' : 'Copiar frase'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-white/60 text-sm mb-2">Dirección Bitcoin (red base)</p>
+            <div className="glass rounded-2xl border border-white/5 p-4 flex items-center gap-2">
+              <code className="flex-1 font-mono text-sm text-white/80 break-all min-w-0">
+                {result.btcAddress}
+              </code>
+              <button
+                type="button"
+                onClick={() => copy(result.btcAddress, 'btc')}
+                className="shrink-0 p-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/80"
+              >
+                {copied === 'btc' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-white/60 text-sm mb-2">Dirección Ethereum (USDT / ERC-20)</p>
+            <div className="glass rounded-2xl border border-white/5 p-4 flex items-center gap-2">
+              <code className="flex-1 font-mono text-sm text-white/80 break-all min-w-0">
+                {result.ethAddress}
+              </code>
+              <button
+                type="button"
+                onClick={() => copy(result.ethAddress, 'eth')}
+                className="shrink-0 p-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/80"
+              >
+                {copied === 'eth' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-white/60 text-sm mb-2">Dirección Dogecoin</p>
+            <div className="glass rounded-2xl border border-white/5 p-4 flex items-center gap-2">
+              <code className="flex-1 font-mono text-sm text-white/80 break-all min-w-0">
+                {result.dogeAddress}
+              </code>
+              <button
+                type="button"
+                onClick={() => copy(result.dogeAddress, 'doge')}
+                className="shrink-0 p-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/80"
+              >
+                {copied === 'doge' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {linkError && (
+            <p className="text-rose-400 text-sm">{linkError}</p>
+          )}
+          {linked ? (
+            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-200 text-sm">
+              Direcciones vinculadas a tu cuenta. La app usará estas direcciones para Recibir, Enviar y ver saldos (Bitcoin en Mempool, USDT en red ERC-20).
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={linking}
+              onClick={() => openPasswordModal('link')}
+              className="w-full py-4 rounded-2xl bg-exodus text-white font-semibold flex items-center justify-center gap-2 hover:bg-exodus-dark transition-colors disabled:opacity-60"
+            >
+              <Link2 className="w-5 h-5" />
+              {linking ? 'Vinculando…' : 'Vincular estas direcciones a mi cuenta'}
+            </button>
+          )}
+
+          <p className="text-white/40 text-xs">
+            Estas direcciones corresponden a la primera cuenta derivada de la frase (Bitcoin: m/84&apos;/0&apos;/0&apos;/0/0, Ethereum: m/44&apos;/60&apos;/0&apos;/0/0). Para usar estos saldos en la app, tendrías que importar esta frase en un flujo de “Importar wallet” (no implementado aquí).
+          </p>
+
+          <button
+            type="button"
+            onClick={handleGenerate}
+            className="w-full py-3 rounded-xl border border-white/20 text-white/80 font-medium hover:bg-white/5 transition-colors"
+          >
+            Generar otra frase
+          </button>
+        </motion.div>
+      )}
+        </>
+      )}
+    </div>
+  )
+}

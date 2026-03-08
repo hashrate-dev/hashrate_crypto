@@ -1,0 +1,35 @@
+[
+  {
+    "id": 500010,
+    "email": "jlvilasoler@hotmail.com",
+    "first_name": "Jose",
+    "second_name": null,
+    "first_surname": "Vila",
+    "second_surname": null,
+    "password_salt": "0417b85b7510eccb40e9eaf0629d8b39",
+    "password_hash": "cba4e2ad3b97cd6142dde1da93b14f7e24894c591ddf70829eba83b2733da42400c83f0c2d0a004ef7942b79d3a49bb2aead40e2e805d59f788fec2f107a36f4",
+    "created_at": "2026-03-08 02:27:03",
+    "pin_salt": "1ee33d9cc1c47e24a3f51400a44b5ca2",
+    "pin_hash": "61e2e9abfa9e720ba56ebb2b5cb117b2dc0ac9b769275c28f0857f69b801593e0f55d385188376221457d5be4ae116d352ea01bd12a5229e82af92dd7e70d6cd",
+    "btc_address": "bc1qtl88c4evaa24jzcp7y3xqenga3wwd5v26mpskv",
+    "usdt_address": "0x46BeBB51711967810a0A16ca29fA5F0A6aD95E64",
+    "encrypted_seed": "n9c+poDAlP9uUQDj4PKNdKlsVOsPK37u/FxMJ0OIKwcoupk+23jQlI37w6gtgY7omj3obQfHE/97e5BlJjVDr+hsXTBT0PmkYcnTH43861cOti1Uvq0emiDjcZrIcVNlXIIZaLO6VS8Z5lKeDA==",
+    "seed_salt": "Lri8rTzoqfJ2Wo6MwvIIaQ=="
+  },
+  {
+    "id": 500011,
+    "email": "jv@hashrate.space",
+    "first_name": "JL",
+    "second_name": null,
+    "first_surname": "VS",
+    "second_surname": null,
+    "password_salt": "01c0b381b2fb6d50ffb0e50dfa0c44bc",
+    "password_hash": "9843cc74bdf4eb811dd818616bcef2e4e1f2e4a0c591193b838b24c29263df321dc58141c77328f7450345a98746a72200f526e14ff42eb7a619282d5189a1af",
+    "created_at": "2026-03-08 06:08:45",
+    "btc_address": "bc1qeckqh08kkwxj387pghvr3usxv0052z8are32lt",
+    "usdt_address": "0xFb548AD2AdEeE767Cef9ac24696642A5D4CA2Dd5",
+    "encrypted_seed": "Q7zc5MiIJq43ER2YyAjufuTPpHDRDcZgwaUo+5q5X9xBZctgpScLpBPFQEZPByXB9uplXW2jjJv/m5EUB/MioJtf+ryiuZtuUNMrtyih/MzfL0FXWXiYeRToFkLfsDuCxpGF5JFTXQTka7O2",
+    "seed_salt": "XjjP/jycbxsWhZXitbpzew==",
+    "totp_secret": "LZ6VMJKUPVTS4KBRM55F4MCYKV4TMO2C"
+  }
+]
