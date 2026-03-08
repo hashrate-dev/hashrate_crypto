@@ -47,7 +47,7 @@ export async function registerUser(data: RegisterPayload): Promise<RegisterRespo
   if (!res.ok) {
     throw new Error((json?.error as string) ?? 'Error al registrar')
   }
-  return json as RegisterResponse
+  return json as unknown as RegisterResponse
 }
 
 export async function getUserById(id: number): Promise<{ user: User }> {

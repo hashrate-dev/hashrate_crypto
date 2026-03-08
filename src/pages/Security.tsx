@@ -15,7 +15,6 @@ import { useAuth } from '../context/AuthContext'
 export function Security() {
   const { user, setUser } = useAuth()
   const [pinActive, setPinActive] = useState(false)
-  const [faceIdOn, setFaceIdOn] = useState(false)
   const [step, setStep] = useState<'menu' | 'set' | 'confirm' | 'remove'>('menu')
   const [pinValue, setPinValue] = useState('')
   const [confirmValue, setConfirmValue] = useState('')
