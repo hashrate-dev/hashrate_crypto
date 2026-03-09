@@ -2,13 +2,14 @@ import { motion } from 'framer-motion'
 import { ChevronRight } from 'lucide-react'
 import type { AssetType } from '../store/wallet'
 import { getAssetSymbol, getAssetPrimaryName, getAssetSecondaryName } from '../store/wallet'
+import { ETH_LOGO_URL } from '../lib/assetLogos'
 import { Sparkline } from './Sparkline'
 
 interface AssetRowProps {
   asset: AssetType
   amount: string
   amountUsd?: string
-  variant?: 'btc' | 'lightning' | 'usdt' | 'doge'
+  variant?: 'btc' | 'lightning' | 'usdt' | 'doge' | 'ltc' | 'eth'
   /** Datos de precio para el gráfico (sparkline) */
   chartData?: number[]
   /** Precio actual de la moneda (1 unidad en USD) */
@@ -23,6 +24,8 @@ const iconBg = {
   lightning: 'bg-lightning/20',
   usdt: 'bg-usdt/20',
   doge: 'bg-amber-200/20',
+  ltc: 'bg-slate-400/20',
+  eth: 'bg-indigo-400/20',
 }
 
 const iconColor = {
@@ -30,6 +33,8 @@ const iconColor = {
   lightning: 'text-violet-400',
   usdt: 'text-emerald-400',
   doge: 'text-amber-300',
+  ltc: 'text-slate-300',
+  eth: 'text-indigo-400',
 }
 
 const sparklineColors = {
@@ -37,6 +42,8 @@ const sparklineColors = {
   lightning: { up: 'rgb(139, 92, 246)', down: 'rgb(239, 68, 68)' },
   usdt: { up: 'rgb(34, 197, 94)', down: 'rgb(239, 68, 68)' },
   doge: { up: 'rgb(198, 166, 100)', down: 'rgb(239, 68, 68)' },
+  ltc: { up: 'rgb(148, 163, 184)', down: 'rgb(239, 68, 68)' },
+  eth: { up: 'rgb(99, 102, 241)', down: 'rgb(239, 68, 68)' },
 }
 
 export function AssetRow({
@@ -49,9 +56,10 @@ export function AssetRow({
   variationPercent: variationPercentProp,
   delay = 0,
 }: AssetRowProps) {
-  const isBtcOrDoge = asset === 'btc' || asset === 'btc_lightning' || asset === 'doge'
-  const displayAmount = isBtcOrDoge ? parseFloat(amount).toFixed(8) : parseFloat(amount).toFixed(2)
-  const colors = sparklineColors[variant]
+  const isCryptoLong = asset === 'btc' || asset === 'btc_lightning' || asset === 'doge' || asset === 'ltc'
+  const isEth = asset === 'eth'
+  const displayAmount = isEth ? parseFloat(amount).toFixed(6) : isCryptoLong ? parseFloat(amount).toFixed(8) : parseFloat(amount).toFixed(2)
+  const colors = sparklineColors[variant] ?? sparklineColors.btc
 
   const variationPercent =
     variationPercentProp ??
@@ -70,11 +78,13 @@ export function AssetRow({
     >
       <div className="flex-1 min-w-0 flex items-center gap-3">
         <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${iconBg[variant]}`}>
-          {asset === 'btc_lightning' ? (
+          {variant === 'eth' ? (
+            <img src={ETH_LOGO_URL} alt="" className="w-8 h-8 object-contain" />
+          ) : asset === 'btc_lightning' ? (
             <span className={`text-3xl font-bold ${iconColor.btc}`}>₿</span>
           ) : (
             <span className={`text-3xl font-bold ${iconColor[variant]}`}>
-              {variant === 'btc' ? '₿' : variant === 'doge' ? 'Ð' : '₮'}
+              {variant === 'btc' ? '₿' : variant === 'doge' ? 'Ð' : variant === 'ltc' ? 'Ł' : '₮'}
             </span>
           )}
         </div>

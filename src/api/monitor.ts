@@ -1,6 +1,4 @@
-const API_BASE = import.meta.env.DEV
-  ? 'http://localhost:3001'
-  : (typeof import.meta.env?.VITE_API_URL === 'string' ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '')
+const API_BASE = import.meta.env.DEV ? 'http://127.0.0.1:3001' : ''
 
 export interface MonitorUser {
   id: number

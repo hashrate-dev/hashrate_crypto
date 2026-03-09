@@ -1,13 +1,8 @@
-import dotenv from 'dotenv'
-import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
+import './loadEnv.js'
 import express from 'express'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-dotenv.config({ path: join(__dirname, '.env') })
 import cors from 'cors'
 import speakeasy from 'speakeasy'
-import { addUser, getUserByEmail, getUserById, updateUser, updateUserPassword, updateUserPasswordWithPin, setUserPin, clearUserPin, verifyUserPin, deleteUserById, verifyUserPassword, getAllUsers, logAccess, getAccessLog } from './db.js'
+import { addUser, getUserByEmail, getUserById, updateUser, updateUserPassword, updateUserPasswordWithPin, setUserPin, clearUserPin, verifyUserPin, deleteUserById, verifyUserPassword, getAllUsers, logAccess, getAccessLog, healthCheck } from './db.js'
 import { sendPasswordChangedEmail } from './email.js'
 
 const app = express()
@@ -31,26 +26,62 @@ function toUserResponse(row) {
   }
 }
 
-// Contraseña: mínimo 6 caracteres, letras o números, al menos una mayúscula
 function isValidPassword(pwd) {
   if (typeof pwd !== 'string' || pwd.length < 6) return false
   if (!/^(?=.*[A-Z])[A-Za-z0-9]+$/.test(pwd)) return false
   return true
 }
-const PORT = process.env.PORT || 3001
 
 app.use(cors({ origin: true }))
 app.use(express.json())
 
-/**
- * Registro de usuario.
- * Body: { email, password, firstName, secondName, firstSurname, secondSurname }
- * Contraseña: mínimo 6 caracteres, letras o números, al menos una mayúscula.
- */
-app.post('/api/register', (req, res) => {
+// Chrome DevTools / extension pide esto; responder 204 evita 404 y ruido en consola
+app.get('/.well-known/appspecific/com.chrome.devtools.json', (req, res) => {
+  res.status(204).end()
+})
+
+// Raíz: comprobar que el backend responde (almacenamiento local)
+app.get('/', async (req, res) => {
+  try {
+    const status = await healthCheck()
+    res.status(200).json({
+      ok: true,
+      message: 'Backend corriendo',
+      db: status.ok ? 'Local (server/data/)' : status.error,
+    })
+  } catch (err) {
+    res.status(503).json({ ok: false, message: 'Error', error: err.message })
+  }
+})
+
+app.get('/api/health', async (req, res) => {
+  try {
+    const status = await healthCheck()
+    if (status.ok) {
+      return res.status(200).json(status)
+    }
+    return res.status(503).json(status)
+  } catch (err) {
+    res.status(503).json({ ok: false, db: 'error', error: err.message || 'Error de salud' })
+  }
+})
+
+// Misma respuesta en /health por si se prueba sin /api
+app.get('/health', async (req, res) => {
+  try {
+    const status = await healthCheck()
+    if (status.ok) {
+      return res.status(200).json(status)
+    }
+    return res.status(503).json(status)
+  } catch (err) {
+    res.status(503).json({ ok: false, db: 'error', error: err.message || 'Error de salud' })
+  }
+})
+
+app.post('/api/register', async (req, res) => {
   try {
     const { email, password, firstName, secondName, firstSurname, secondSurname } = req.body
-
     if (!email || typeof email !== 'string' || !email.trim()) {
       return res.status(400).json({ error: 'El email es obligatorio.' })
     }
@@ -65,13 +96,11 @@ app.post('/api/register', (req, res) => {
     if (!firstSurname || typeof firstSurname !== 'string' || !firstSurname.trim()) {
       return res.status(400).json({ error: 'El primer apellido es obligatorio.' })
     }
-
     const normalizedEmail = email.trim().toLowerCase()
-    if (getUserByEmail(normalizedEmail)) {
+    if (await getUserByEmail(normalizedEmail)) {
       return res.status(409).json({ error: 'Ya existe un usuario con ese email.' })
     }
-
-    const row = addUser({
+    const row = await addUser({
       email: normalizedEmail,
       password: String(password),
       first_name: String(firstName).trim(),
@@ -79,7 +108,6 @@ app.post('/api/register', (req, res) => {
       first_surname: String(firstSurname).trim(),
       second_surname: secondSurname != null ? String(secondSurname).trim() : null,
     })
-
     res.status(201).json({
       message: 'Usuario registrado correctamente.',
       user: toUserResponse(row),
@@ -90,16 +118,13 @@ app.post('/api/register', (req, res) => {
   }
 })
 
-/**
- * Obtener usuario por ID NUMBER.
- */
-app.get('/api/users/:id', (req, res) => {
+app.get('/api/users/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
     if (Number.isNaN(id) || id < 1) {
       return res.status(400).json({ error: 'ID no válido.' })
     }
-    const row = getUserById(id)
+    const row = await getUserById(id)
     if (!row) {
       return res.status(404).json({ error: 'Usuario no encontrado.' })
     }
@@ -110,24 +135,22 @@ app.get('/api/users/:id', (req, res) => {
   }
 })
 
-/**
- * Inicio de sesión con email y contraseña.
- * Body: { email, password }
- */
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   try {
-    const { email, password } = req.body
-    if (!email || typeof email !== 'string' || !email.trim()) {
+    const body = req.body || {}
+    const email = body.email
+    const password = body.password
+    if (!email || typeof email !== 'string' || !String(email).trim()) {
       return res.status(400).json({ error: 'El email es obligatorio.' })
     }
-    if (!password || typeof password !== 'string') {
+    if (password === undefined || password === null || typeof password !== 'string') {
       return res.status(400).json({ error: 'La contraseña es obligatoria.' })
     }
-    const user = verifyUserPassword(email.trim(), password)
+    const user = await verifyUserPassword(String(email).trim(), password)
     if (!user) {
       return res.status(401).json({ error: 'Email o contraseña incorrectos.' })
     }
-    logAccess({
+    await logAccess({
       userId: user.id,
       email: user.email,
       firstName: user.first_name,
@@ -140,16 +163,13 @@ app.post('/api/login', (req, res) => {
   }
 })
 
-/**
- * Obtener usuario por email.
- */
-app.get('/api/users/by-email/:email', (req, res) => {
+app.get('/api/users/by-email/:email', async (req, res) => {
   try {
     const email = decodeURIComponent(req.params.email).trim().toLowerCase()
     if (!email) {
       return res.status(400).json({ error: 'Email no válido.' })
     }
-    const row = getUserByEmail(email)
+    const row = await getUserByEmail(email)
     if (!row) {
       return res.status(404).json({ error: 'Usuario no encontrado.' })
     }
@@ -160,22 +180,18 @@ app.get('/api/users/by-email/:email', (req, res) => {
   }
 })
 
-/**
- * Actualizar usuario por ID NUMBER. El email no se puede cambiar.
- * Body: { firstName?, secondName?, firstSurname?, secondSurname?, lightningAddress? }
- */
-app.put('/api/users/:id', (req, res) => {
+app.put('/api/users/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
     if (Number.isNaN(id) || id < 1) {
       return res.status(400).json({ error: 'ID no válido.' })
     }
-    const current = getUserById(id)
+    const current = await getUserById(id)
     if (!current) {
       return res.status(404).json({ error: 'Usuario no encontrado.' })
     }
     const { firstName, secondName, firstSurname, secondSurname, lightningAddress } = req.body
-    const row = updateUser(id, {
+    const row = await updateUser(id, {
       first_name: firstName != null ? String(firstName).trim() : current.first_name,
       second_name: secondName !== undefined ? (secondName != null ? String(secondName).trim() : null) : current.second_name,
       first_surname: firstSurname != null ? String(firstSurname).trim() : current.first_surname,
@@ -195,20 +211,13 @@ app.put('/api/users/:id', (req, res) => {
   }
 })
 
-/**
- * Vincular o reemplazar direcciones de wallet (derivadas de frase semilla).
- * Al vincular o reemplazar se deben enviar todas las direcciones (btcAddress, usdtAddress, dogeAddress, ltcAddress, ethAddress)
- * para que queden registradas y disponibles en toda la app sin tener que ver la frase.
- * Body: { btcAddress, usdtAddress, dogeAddress?, ltcAddress?, ethAddress?, encryptedSeed?, seedSalt?, password? }
- * Si la cuenta ya tiene wallets, password es obligatorio para reemplazar.
- */
-app.put('/api/users/:id/wallets', (req, res) => {
+app.put('/api/users/:id/wallets', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
     if (Number.isNaN(id) || id < 1) {
       return res.status(400).json({ error: 'ID no válido.' })
     }
-    const current = getUserById(id)
+    const current = await getUserById(id)
     if (!current) {
       return res.status(404).json({ error: 'Usuario no encontrado.' })
     }
@@ -225,7 +234,7 @@ app.put('/api/users/:id/wallets', (req, res) => {
           error: 'Para generar una nueva frase semilla tenés que ingresar tu contraseña.',
         })
       }
-      const verified = verifyUserPassword(current.email, password)
+      const verified = await verifyUserPassword(current.email, password)
       if (!verified) {
         return res.status(401).json({ error: 'Contraseña incorrecta.' })
       }
@@ -246,7 +255,6 @@ app.put('/api/users/:id/wallets', (req, res) => {
     if (ethAddress != null && typeof ethAddress !== 'string') {
       return res.status(400).json({ error: 'ethAddress debe ser una cadena.' })
     }
-    // Al guardar frase semilla (vincular o reemplazar), tienen que enviarse todas las direcciones derivadas
     const isSavingSeed = encryptedSeed !== undefined && encryptedSeed != null && String(encryptedSeed).trim() !== ''
     if (isSavingSeed) {
       const allRequired = [btcAddress, usdtAddress, dogeAddress, ltcAddress, ethAddress]
@@ -257,7 +265,7 @@ app.put('/api/users/:id/wallets', (req, res) => {
         })
       }
     }
-    const row = updateUser(id, {
+    const row = await updateUser(id, {
       btc_address: btcAddress != null ? String(btcAddress).trim() : current.btc_address,
       usdt_address: usdtAddress != null ? String(usdtAddress).trim() : current.usdt_address,
       doge_address: dogeAddress != null ? String(dogeAddress).trim() : current.doge_address,
@@ -279,17 +287,13 @@ app.put('/api/users/:id/wallets', (req, res) => {
   }
 })
 
-/**
- * Obtener la frase semilla cifrada para mostrarla tras verificar contraseña en el cliente.
- * GET /api/users/:id/encrypted-seed
- */
-app.get('/api/users/:id/encrypted-seed', (req, res) => {
+app.get('/api/users/:id/encrypted-seed', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
     if (Number.isNaN(id) || id < 1) {
       return res.status(400).json({ error: 'ID no válido.' })
     }
-    const row = getUserById(id)
+    const row = await getUserById(id)
     if (!row) {
       return res.status(404).json({ error: 'Usuario no encontrado.' })
     }
@@ -308,9 +312,9 @@ app.get('/api/users/:id/encrypted-seed', (req, res) => {
 
 /**
  * Generar código de pago Lightning (factura BOLT11) para recibir.
- * Conectado a LNbits si LNBITS_URL y LNBITS_INVOICE_KEY están en .env; si no, se devuelve factura de prueba.
+ * Conectado a LNbits si LNBITS_URL y LNBITS_INVOICE_KEY están en .env.
  * Body: { amountSats?: number, description?: string }
- * Respuesta: { invoice: string, expiresIn?: number } (invoice = lnbc...)
+ * Respuesta: { invoice: string, expiresIn?: number }
  */
 app.post('/api/users/:id/lightning-invoice', async (req, res) => {
   try {
@@ -318,7 +322,7 @@ app.post('/api/users/:id/lightning-invoice', async (req, res) => {
     if (Number.isNaN(id) || id < 1) {
       return res.status(400).json({ error: 'ID no válido.' })
     }
-    const row = getUserById(id)
+    const row = await getUserById(id)
     if (!row) {
       return res.status(404).json({ error: 'Usuario no encontrado.' })
     }
@@ -344,11 +348,7 @@ app.post('/api/users/:id/lightning-invoice', async (req, res) => {
   }
 })
 
-/**
- * Guardar PIN del usuario (para poder cambiar contraseña con PIN si no la recuerda).
- * Body: { pin } — 4 a 6 dígitos.
- */
-app.put('/api/users/:id/pin', (req, res) => {
+app.put('/api/users/:id/pin', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
     if (Number.isNaN(id) || id < 1) {
@@ -358,7 +358,7 @@ app.put('/api/users/:id/pin', (req, res) => {
     if (!pin || typeof pin !== 'string' || !/^[0-9]{4,6}$/.test(pin)) {
       return res.status(400).json({ error: 'El PIN debe tener entre 4 y 6 dígitos (solo números).' })
     }
-    const ok = setUserPin(id, pin)
+    const ok = await setUserPin(id, pin)
     if (!ok) return res.status(404).json({ error: 'Usuario no encontrado.' })
     res.json({ message: 'PIN guardado correctamente.' })
   } catch (err) {
@@ -367,16 +367,13 @@ app.put('/api/users/:id/pin', (req, res) => {
   }
 })
 
-/**
- * Eliminar PIN del usuario.
- */
-app.delete('/api/users/:id/pin', (req, res) => {
+app.delete('/api/users/:id/pin', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
     if (Number.isNaN(id) || id < 1) {
       return res.status(400).json({ error: 'ID no válido.' })
     }
-    const ok = clearUserPin(id)
+    const ok = await clearUserPin(id)
     if (!ok) return res.status(404).json({ error: 'Usuario no encontrado.' })
     res.json({ message: 'PIN eliminado.' })
   } catch (err) {
@@ -385,16 +382,13 @@ app.delete('/api/users/:id/pin', (req, res) => {
   }
 })
 
-/**
- * Google Authenticator (TOTP): obtener secreto para configurar. No guarda hasta totp-enable.
- */
-app.get('/api/users/:id/totp-setup', (req, res) => {
+app.get('/api/users/:id/totp-setup', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
     if (Number.isNaN(id) || id < 1) {
       return res.status(400).json({ error: 'ID no válido.' })
     }
-    const row = getUserById(id)
+    const row = await getUserById(id)
     if (!row) {
       return res.status(404).json({ error: 'Usuario no encontrado.' })
     }
@@ -412,11 +406,7 @@ app.get('/api/users/:id/totp-setup', (req, res) => {
   }
 })
 
-/**
- * Activar Google Authenticator: verificar código y guardar secreto.
- * Body: { secret, token } (token = código de 6 dígitos de la app).
- */
-app.post('/api/users/:id/totp-enable', (req, res) => {
+app.post('/api/users/:id/totp-enable', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
     if (Number.isNaN(id) || id < 1) {
@@ -435,7 +425,7 @@ app.post('/api/users/:id/totp-enable', (req, res) => {
     if (!verified) {
       return res.status(400).json({ error: 'Código incorrecto. Verificá el código de 6 dígitos de Google Authenticator.' })
     }
-    const row = updateUser(id, { totp_secret: secret.trim() })
+    const row = await updateUser(id, { totp_secret: secret.trim() })
     if (!row) {
       return res.status(404).json({ error: 'Usuario no encontrado.' })
     }
@@ -446,17 +436,13 @@ app.post('/api/users/:id/totp-enable', (req, res) => {
   }
 })
 
-/**
- * Verificar código TOTP (para enviar fondos u otras acciones sensibles).
- * Body: { token }
- */
-app.post('/api/users/:id/totp-verify', (req, res) => {
+app.post('/api/users/:id/totp-verify', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
     if (Number.isNaN(id) || id < 1) {
       return res.status(400).json({ error: 'ID no válido.' })
     }
-    const row = getUserById(id)
+    const row = await getUserById(id)
     if (!row || !row.totp_secret) {
       return res.status(400).json({ error: 'La cuenta no tiene 2FA activado.' })
     }
@@ -480,16 +466,13 @@ app.post('/api/users/:id/totp-verify', (req, res) => {
   }
 })
 
-/**
- * Desactivar Google Authenticator. Body: { password }
- */
-app.post('/api/users/:id/totp-disable', (req, res) => {
+app.post('/api/users/:id/totp-disable', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
     if (Number.isNaN(id) || id < 1) {
       return res.status(400).json({ error: 'ID no válido.' })
     }
-    const row = getUserById(id)
+    const row = await getUserById(id)
     if (!row) {
       return res.status(404).json({ error: 'Usuario no encontrado.' })
     }
@@ -497,11 +480,11 @@ app.post('/api/users/:id/totp-disable', (req, res) => {
     if (!password || typeof password !== 'string') {
       return res.status(400).json({ error: 'Ingresá tu contraseña para desactivar 2FA.' })
     }
-    const user = verifyUserPassword(row.email, password)
+    const user = await verifyUserPassword(row.email, password)
     if (!user) {
       return res.status(401).json({ error: 'Contraseña incorrecta.' })
     }
-    const updated = updateUser(id, { totp_secret: null })
+    const updated = await updateUser(id, { totp_secret: null })
     if (!updated) {
       return res.status(404).json({ error: 'Usuario no encontrado.' })
     }
@@ -512,11 +495,7 @@ app.post('/api/users/:id/totp-disable', (req, res) => {
   }
 })
 
-/**
- * Cambiar contraseña del usuario por ID.
- * Body: { currentPassword, newPassword } O bien { pin, newPassword } si no recuerda la contraseña.
- */
-app.put('/api/users/:id/password', (req, res) => {
+app.put('/api/users/:id/password', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
     if (Number.isNaN(id) || id < 1) {
@@ -533,19 +512,19 @@ app.put('/api/users/:id/password', (req, res) => {
       if (!/^[0-9]{4,6}$/.test(pin)) {
         return res.status(400).json({ error: 'El PIN debe tener entre 4 y 6 dígitos.' })
       }
-      updated = updateUserPasswordWithPin(id, pin, newPassword)
+      updated = await updateUserPasswordWithPin(id, pin, newPassword)
       if (!updated) {
         return res.status(401).json({ error: 'PIN incorrecto.' })
       }
     } else if (currentPassword != null && typeof currentPassword === 'string') {
-      updated = updateUserPassword(id, currentPassword, newPassword)
+      updated = await updateUserPassword(id, currentPassword, newPassword)
       if (!updated) {
         return res.status(401).json({ error: 'Contraseña actual incorrecta.' })
       }
     } else {
       return res.status(400).json({ error: 'Ingresá tu contraseña actual o tu PIN.' })
     }
-    const user = getUserById(id)
+    const user = await getUserById(id)
     if (user?.email) {
       sendPasswordChangedEmail(user.email).catch((err) =>
         console.error('[Email] Fallo envío aviso cambio contraseña:', err)
@@ -558,16 +537,13 @@ app.put('/api/users/:id/password', (req, res) => {
   }
 })
 
-/**
- * Eliminar usuario por ID NUMBER. Borra la cuenta de la base de datos.
- */
-app.delete('/api/users/:id', (req, res) => {
+app.delete('/api/users/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
     if (Number.isNaN(id) || id < 1) {
       return res.status(400).json({ error: 'ID no válido.' })
     }
-    const deleted = deleteUserById(id)
+    const deleted = await deleteUserById(id)
     if (!deleted) {
       return res.status(404).json({ error: 'Usuario no encontrado.' })
     }
@@ -578,12 +554,9 @@ app.delete('/api/users/:id', (req, res) => {
   }
 })
 
-/**
- * Monitor: listado de usuarios registrados (ID, email, nombre, apellido).
- */
-app.get('/api/monitor/users', (req, res) => {
+app.get('/api/monitor/users', async (req, res) => {
   try {
-    const list = getAllUsers()
+    const list = await getAllUsers()
     res.json({
       users: list.map((u) => ({
         id: u.id,
@@ -601,13 +574,10 @@ app.get('/api/monitor/users', (req, res) => {
   }
 })
 
-/**
- * Monitor: histórico de accesos (logins).
- */
-app.get('/api/monitor/access-log', (req, res) => {
+app.get('/api/monitor/access-log', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500)
-    const log = getAccessLog(limit)
+    const log = await getAccessLog(limit)
     res.json({ log })
   } catch (err) {
     console.error(err)
@@ -615,6 +585,9 @@ app.get('/api/monitor/access-log', (req, res) => {
   }
 })
 
-app.listen(PORT, () => {
-  console.log(`Servidor de usuarios escuchando en http://localhost:${PORT}`)
+// Cualquier ruta no definida → 404 JSON (no HTML)
+app.use((req, res) => {
+  res.status(404).json({ ok: false, error: 'Ruta no encontrada', path: req.path })
 })
+
+export default app

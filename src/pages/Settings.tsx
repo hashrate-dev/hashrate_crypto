@@ -1,18 +1,21 @@
 import { motion } from 'framer-motion'
-import { ArrowLeft, Shield, Bell, Palette, HelpCircle, LogOut, UserCircle, Mail, Wallet } from 'lucide-react'
+import { ArrowLeft, Shield, Bell, Palette, HelpCircle, LogOut, UserCircle, Mail, Wallet, Globe } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useLanguage } from '../context/LanguageContext'
 
-const items = [
-  { icon: Shield, label: 'Seguridad', sub: 'PIN de acceso', to: '/security' },
-  { icon: Bell, label: 'Notificaciones', sub: 'Alertas de transacciones', to: '/notifications' },
-  { icon: Palette, label: 'Apariencia', sub: 'Tema y moneda', to: '/appearance' },
-  { icon: Wallet, label: 'Billeteras', sub: 'Frase semilla y Dirección Lightning', to: '/billeteras' },
-  { icon: HelpCircle, label: 'Ayuda', sub: 'FAQ y soporte', to: '#' },
-]
+const MENU_ITEMS = [
+  { icon: Globe, labelKey: 'languages', subKey: 'language_sub', to: '/language' },
+  { icon: Shield, labelKey: 'security', subKey: 'pin_access', to: '/security' },
+  { icon: Bell, labelKey: 'notifications', subKey: 'alerts_transactions', to: '/notifications' },
+  { icon: Palette, labelKey: 'appearance', subKey: 'theme_currency', to: '/appearance' },
+  { icon: Wallet, labelKey: 'wallets', subKey: 'seed_lightning', to: '/billeteras' },
+  { icon: HelpCircle, labelKey: 'help', subKey: 'faq_support', to: '#' },
+] as const
 
 export function Settings() {
   const { user, logout } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
 
   const handleLogout = () => {
@@ -26,7 +29,7 @@ export function Settings() {
         <Link to="/" className="p-2 -ml-2 rounded-xl hover:bg-white/5 transition-colors">
           <ArrowLeft className="w-5 h-5 text-white/80" />
         </Link>
-        <h1 className="text-xl font-bold text-white">Ajustes</h1>
+        <h1 className="text-xl font-bold text-white">{t('settings')}</h1>
       </div>
 
       {/* Datos de la cuenta */}
@@ -35,9 +38,9 @@ export function Settings() {
         animate={{ opacity: 1, y: 0 }}
         className="glass rounded-2xl border border-white/5 p-5 mb-6"
       >
-        <p className="text-sm font-semibold text-white/60 mb-1">ID NUMBER:</p>
+        <p className="text-sm font-semibold text-white/60 mb-1">{t('id_number')}</p>
         <p className="text-lg font-semibold text-white mb-4">{user?.id ?? '—'}</p>
-        <p className="text-sm font-semibold text-white/60 mb-2">Email</p>
+        <p className="text-sm font-semibold text-white/60 mb-2">{t('email')}</p>
         <div className="flex items-center gap-3 rounded-xl bg-white/5 border border-white/10 px-4 py-3">
           <Mail className="w-5 h-5 text-white/50 shrink-0" />
           <span className="text-white/90 truncate">{user?.email ?? '—'}</span>
@@ -45,12 +48,12 @@ export function Settings() {
       </motion.div>
 
       <div className="glass rounded-2xl overflow-hidden divide-y divide-white/5">
-        {items.map((item, i) => {
+        {MENU_ITEMS.map((item, i) => {
           const linkProps = (item as { external?: boolean }).external
             ? { to: item.to as string, target: '_blank', rel: 'noopener noreferrer' as const }
             : { to: item.to }
           return (
-          <Link key={item.label} {...linkProps}>
+          <Link key={item.labelKey} {...linkProps}>
             <motion.div
               initial={{ opacity: 0, x: -8 }}
               animate={{ opacity: 1, x: 0 }}
@@ -61,8 +64,8 @@ export function Settings() {
                 <item.icon className="w-5 h-5 text-white/80" />
               </div>
               <div className="flex-1">
-                <p className="font-medium text-white">{item.label}</p>
-                <p className="text-sm text-white/50">{item.sub}</p>
+                <p className="font-medium text-white">{t(item.labelKey)}</p>
+                <p className="text-sm text-white/50">{t(item.subKey)}</p>
               </div>
             </motion.div>
           </Link>
@@ -80,8 +83,8 @@ export function Settings() {
             <UserCircle className="w-5 h-5 text-exodus" />
           </div>
           <div className="flex-1">
-            <p className="font-medium text-white">Cuenta</p>
-            <p className="text-sm text-white/50">Editar datos de tu cuenta</p>
+            <p className="font-medium text-white">{t('account')}</p>
+            <p className="text-sm text-white/50">{t('edit_account')}</p>
           </div>
         </motion.div>
       </Link>
@@ -94,7 +97,7 @@ export function Settings() {
         transition={{ delay: 0.2 }}
         className="mt-6 w-full flex items-center justify-center gap-2 py-4 rounded-2xl border border-rose-500/30 text-rose-400 font-medium hover:bg-rose-500/10 transition-colors"
       >
-        <LogOut className="w-5 h-5" /> Cerrar sesión
+        <LogOut className="w-5 h-5" /> {t('logout')}
       </motion.button>
     </div>
   )

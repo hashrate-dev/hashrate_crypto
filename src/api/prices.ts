@@ -39,10 +39,12 @@ const BINANCE_PARAMS: Record<ChartRange, { interval: string; limit: number }> = 
   '1M': { interval: '1M', limit: 12 },
 }
 
-/** Símbolo Binance por activo: BTC/Lightning = BTCUSDT, USDT = USDCUSDT, DOGE = DOGEUSDT. */
+/** Símbolo Binance por activo: BTC/Lightning = BTCUSDT, USDT = USDCUSDT, DOGE = DOGEUSDT, LTC = LTCUSDT, ETH = ETHUSDT. */
 function getBinanceSymbol(assetId: string): string {
   if (assetId === 'usdt') return 'USDCUSDT'
   if (assetId === 'doge') return 'DOGEUSDT'
+  if (assetId === 'ltc') return 'LTCUSDT'
+  if (assetId === 'eth') return 'ETHUSDT'
   return 'BTCUSDT'
 }
 
@@ -50,6 +52,8 @@ function getBinanceSymbol(assetId: string): string {
 function getCoinGeckoId(assetId: string): string {
   if (assetId === 'usdt') return 'tether'
   if (assetId === 'doge') return 'dogecoin'
+  if (assetId === 'ltc') return 'litecoin'
+  if (assetId === 'eth') return 'ethereum'
   return 'bitcoin'
 }
 
@@ -267,17 +271,47 @@ export async function fetchDogePrices(): Promise<number[]> {
   return samplePrices(prices, SPARKLINE_POINTS)
 }
 
+/** Precios Litecoin para sparkline: Binance o CoinGecko. */
+export async function fetchLtcPrices(): Promise<number[]> {
+  try {
+    const prices = await fetchBinanceKlines('LTCUSDT', '1h')
+    if (prices.length > 0) return samplePrices(prices, SPARKLINE_POINTS)
+  } catch {
+    /* sigue a CoinGecko */
+  }
+  const prices = await fetchCoinGeckoChart('litecoin', 7)
+  if (prices.length === 0) return []
+  return samplePrices(prices, SPARKLINE_POINTS)
+}
+
+/** Precios Ethereum para sparkline: Binance o CoinGecko. */
+export async function fetchEthPrices(): Promise<number[]> {
+  try {
+    const prices = await fetchBinanceKlines('ETHUSDT', '1h')
+    if (prices.length > 0) return samplePrices(prices, SPARKLINE_POINTS)
+  } catch {
+    /* sigue a CoinGecko */
+  }
+  const prices = await fetchCoinGeckoChart('ethereum', 7)
+  if (prices.length === 0) return []
+  return samplePrices(prices, SPARKLINE_POINTS)
+}
+
 export type AssetChartData = {
   btc: number[]
   btc_lightning: number[]
   usdt: number[]
   doge: number[]
+  ltc: number[]
+  eth: number[]
 }
 
 export type CurrentPrices = {
   btc: number
   usdt: number
   doge: number
+  ltc: number
+  eth: number
 }
 
 export type AssetChartsResult = {
@@ -290,21 +324,27 @@ let cache: { data: AssetChartsResult; ts: number } | null = null
 
 export async function fetchAllAssetCharts(): Promise<AssetChartsResult> {
   if (cache && Date.now() - cache.ts < CACHE_MS) return cache.data
-  const [btcPrices, usdtPrices, dogePrices] = await Promise.all([
+  const [btcPrices, usdtPrices, dogePrices, ltcPrices, ethPrices] = await Promise.all([
     fetchBitcoinPrices(),
     fetchUsdtPrices(),
     fetchDogePrices(),
+    fetchLtcPrices(),
+    fetchEthPrices(),
   ])
   const chartData: AssetChartData = {
     btc: btcPrices,
     btc_lightning: btcPrices,
     usdt: usdtPrices,
     doge: dogePrices,
+    ltc: ltcPrices,
+    eth: ethPrices,
   }
   const currentPrices: CurrentPrices = {
     btc: btcPrices.length > 0 ? btcPrices[btcPrices.length - 1] : 0,
     usdt: usdtPrices.length > 0 ? usdtPrices[usdtPrices.length - 1] : 0,
     doge: dogePrices.length > 0 ? dogePrices[dogePrices.length - 1] : 0,
+    ltc: ltcPrices.length > 0 ? ltcPrices[ltcPrices.length - 1] : 0,
+    eth: ethPrices.length > 0 ? ethPrices[ethPrices.length - 1] : 0,
   }
   cache = { data: { chartData, currentPrices }, ts: Date.now() }
   return cache.data

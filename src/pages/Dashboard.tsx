@@ -9,6 +9,8 @@ import { useAssetCharts } from '../hooks/useAssetCharts'
 import { useMempoolBtc } from '../hooks/useMempoolBtc'
 import { useUsdtBalance } from '../hooks/useUsdtBalance'
 import { useDogeBalance } from '../hooks/useDogeBalance'
+import { useLtcBalance } from '../hooks/useLtcBalance'
+import { useEthBalance } from '../hooks/useEthBalance'
 import { useWalletAddresses } from '../hooks/useWalletAddresses'
 import type { AssetType } from '../store/wallet'
 
@@ -16,12 +18,17 @@ import type { AssetType } from '../store/wallet'
 function getAmountUsd(
   amount: string,
   asset: AssetType,
-  currentPrices: { btc: number; usdt: number; doge: number } | null,
+  currentPrices: { btc: number; usdt: number; doge: number; ltc: number; eth: number } | null,
   fallbackUsd?: string
 ): string {
   if (!currentPrices) return fallbackUsd ?? '0.00'
   const n = parseFloat(amount)
-  const price = asset === 'usdt' ? currentPrices.usdt : asset === 'doge' ? currentPrices.doge : currentPrices.btc
+  const price =
+    asset === 'usdt' ? currentPrices.usdt
+    : asset === 'doge' ? currentPrices.doge
+    : asset === 'ltc' ? currentPrices.ltc
+    : asset === 'eth' ? currentPrices.eth
+    : currentPrices.btc
   return (n * price).toFixed(2)
 }
 
@@ -30,16 +37,20 @@ const SEGMENT_COLORS: Record<string, string> = {
   btc_lightning: 'rgb(139, 92, 246)',
   usdt: 'rgb(52, 211, 153)',
   doge: 'rgb(198, 166, 100)',
+  ltc: 'rgb(191, 191, 191)',
+  eth: 'rgb(98, 126, 234)',
 }
 
 export function Dashboard() {
   const [breakdownOpen, setBreakdownOpen] = useState(false)
   const { balances: baseBalances } = initialWalletState
-  const { btcAddress, usdtAddress, dogeAddress, hasLinkedWallet } = useWalletAddresses()
+  const { btcAddress, usdtAddress, dogeAddress, ltcAddress, ethAddress, hasLinkedWallet } = useWalletAddresses()
   const { chartData, currentPrices, loading: chartsLoading, error: chartsError } = useAssetCharts()
   const { balanceBtc: mempoolBtc } = useMempoolBtc(btcAddress)
   const { balanceUsdt: usdtBalance } = useUsdtBalance(usdtAddress)
   const { balanceDoge: dogeBalance } = useDogeBalance(dogeAddress)
+  const { balanceLtc: ltcBalance } = useLtcBalance(ltcAddress)
+  const { balanceEth: ethBalance } = useEthBalance(ethAddress)
 
   // Cuentas nuevas (sin wallet vinculada): saldo 0 en todo. No usar direcciones ni saldos de ejemplo.
   const balances = useMemo((): Balance[] => {
@@ -47,10 +58,27 @@ export function Dashboard() {
       if (b.asset === 'btc') return { ...b, amount: mempoolBtc ?? '0', amountUsd: undefined }
       if (b.asset === 'usdt') return { ...b, amount: usdtBalance ?? '0', amountUsd: undefined }
       if (b.asset === 'doge') return { ...b, amount: dogeBalance ?? '0', amountUsd: undefined }
+      if (b.asset === 'ltc') return { ...b, amount: ltcBalance ?? '0', amountUsd: undefined }
+      if (b.asset === 'eth') return { ...b, amount: ethBalance ?? '0', amountUsd: undefined }
       if (b.asset === 'btc_lightning') return { ...b, amount: hasLinkedWallet ? b.amount : '0', amountUsd: hasLinkedWallet ? b.amountUsd : undefined }
       return b
     })
-  }, [baseBalances, mempoolBtc, usdtBalance, dogeBalance, hasLinkedWallet])
+  }, [baseBalances, mempoolBtc, usdtBalance, dogeBalance, ltcBalance, ethBalance, hasLinkedWallet])
+
+  /** Lista para mostrar: Bitcoin unificado (red base + Lightning en una sola fila). */
+  const displayBalances = useMemo((): Balance[] => {
+    const btc = balances.find((b) => b.asset === 'btc')
+    const lightning = balances.find((b) => b.asset === 'btc_lightning')
+    return balances
+      .filter((b) => b.asset !== 'btc_lightning')
+      .map((b) => {
+        if (b.asset === 'btc' && btc && lightning) {
+          const totalBtc = parseFloat(btc.amount) + parseFloat(lightning.amount)
+          return { ...b, amount: totalBtc.toFixed(8) }
+        }
+        return b
+      })
+  }, [balances])
 
   const totalUsdNum = currentPrices
     ? balances.reduce(
@@ -61,7 +89,7 @@ export function Dashboard() {
     : parseFloat(getTotalUsd(balances))
 
   const segments = useMemo((): PortfolioSegment[] => {
-    const list = balances.map((b) => {
+    const list = displayBalances.map((b) => {
       const valueUsd = currentPrices
         ? parseFloat(getAmountUsd(b.amount, b.asset, currentPrices, b.amountUsd))
         : parseFloat(b.amountUsd ?? '0')
@@ -75,7 +103,7 @@ export function Dashboard() {
       }
     })
     return list
-  }, [balances, currentPrices, totalUsdNum])
+  }, [displayBalances, currentPrices, totalUsdNum])
 
   return (
     <div className="px-4 pt-6 pb-8">
@@ -237,7 +265,7 @@ export function Dashboard() {
         )}
       </div>
       <div className="glass rounded-2xl border border-white/5 overflow-hidden divide-y divide-white/5">
-        {balances.map((b, i) => (
+        {displayBalances.map((b, i) => (
           <Link
             key={b.asset}
             to={`/mercado/${b.asset}`}
@@ -247,9 +275,9 @@ export function Dashboard() {
               asset={b.asset}
               amount={b.amount}
               amountUsd={getAmountUsd(b.amount, b.asset, currentPrices, b.amountUsd)}
-              variant={b.asset === 'usdt' ? 'usdt' : b.asset === 'btc_lightning' ? 'lightning' : b.asset === 'doge' ? 'doge' : 'btc'}
+              variant={b.asset === 'usdt' ? 'usdt' : b.asset === 'doge' ? 'doge' : b.asset === 'ltc' ? 'ltc' : b.asset === 'eth' ? 'eth' : 'btc'}
               chartData={chartData[b.asset]}
-              currentPrice={currentPrices ? (b.asset === 'usdt' ? currentPrices.usdt : b.asset === 'doge' ? currentPrices.doge : currentPrices.btc) : undefined}
+              currentPrice={currentPrices ? (b.asset === 'usdt' ? currentPrices.usdt : b.asset === 'doge' ? currentPrices.doge : b.asset === 'ltc' ? currentPrices.ltc : b.asset === 'eth' ? currentPrices.eth : currentPrices.btc) : undefined}
               delay={i * 0.05}
             />
           </Link>
@@ -295,7 +323,7 @@ export function Dashboard() {
               </div>
               <div className="text-right shrink-0">
                 <p className={`font-mono font-medium ${tx.type === 'receive' ? 'text-emerald-400' : 'text-white'}`}>
-                  {tx.type === 'receive' ? '+' : '-'}{tx.amount} {tx.asset === 'usdt' ? 'USDT' : tx.asset === 'doge' ? 'DOGE' : 'BTC'}
+                  {tx.type === 'receive' ? '+' : '-'}{tx.amount} {tx.asset === 'usdt' ? 'USDT' : tx.asset === 'doge' ? 'DOGE' : tx.asset === 'ltc' ? 'LTC' : tx.asset === 'eth' ? 'ETH' : 'BTC'}
                 </p>
                 <p className="text-xs text-white/40">${tx.amountUsd}</p>
               </div>

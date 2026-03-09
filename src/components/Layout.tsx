@@ -2,18 +2,20 @@ import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Home, BarChart3, Send, QrCode, History, Settings } from 'lucide-react'
+import { useLanguage } from '../context/LanguageContext'
 
 const navItems = [
-  { path: '/', icon: Home, label: 'Portfolio' },
-  { path: '/mercado', icon: BarChart3, label: 'Mercado' },
-  { path: '/send', icon: Send, label: 'Enviar' },
-  { path: '/receive', icon: QrCode, label: 'Recibir' },
-  { path: '/history', icon: History, label: 'Historial' },
-  { path: '/settings', icon: Settings, label: 'Ajustes' },
+  { path: '/', icon: Home, labelKey: 'portfolio' },
+  { path: '/mercado', icon: BarChart3, labelKey: 'market' },
+  { path: '/send', icon: Send, labelKey: 'send_nav' },
+  { path: '/receive', icon: QrCode, labelKey: 'receive_nav' },
+  { path: '/history', icon: History, labelKey: 'history' },
+  { path: '/settings', icon: Settings, labelKey: 'settings_nav' },
 ]
 
 export function Layout({ children }: { children: ReactNode }) {
   const location = useLocation()
+  const { t } = useLanguage()
 
   return (
     <div className="h-full min-h-screen flex flex-col relative overflow-hidden">
@@ -26,7 +28,7 @@ export function Layout({ children }: { children: ReactNode }) {
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
               </svg>
             </div>
-            <span className="font-bold text-lg tracking-tight text-white">Imperium Wallet</span>
+            <span className="font-bold text-lg tracking-tight text-white">{t('imperium_wallet')}</span>
           </Link>
           <div className="w-9" />
         </div>
@@ -40,8 +42,8 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="max-w-lg mx-auto w-full">
           <div className="glass border-t border-white/5 rounded-t-2xl bg-surface-900/95 backdrop-blur-xl">
           <div className="flex items-center justify-around h-16 px-2">
-            {navItems.map(({ path, icon: Icon, label }) => {
-              const isActive = location.pathname === path
+            {navItems.map(({ path, icon: Icon, labelKey }) => {
+              const isActive = path === '/' ? location.pathname === '/' : location.pathname === path || location.pathname.startsWith(path + '/')
               return (
                 <Link
                   key={path}
@@ -60,7 +62,7 @@ export function Layout({ children }: { children: ReactNode }) {
                   <span className="relative z-10">
                     <Icon className="w-6 h-6" strokeWidth={isActive ? 2.5 : 2} />
                   </span>
-                  <span className="relative z-10 text-[10px] font-medium">{label}</span>
+                  <span className="relative z-10 text-[10px] font-medium">{t(labelKey)}</span>
                 </Link>
               )
             })}

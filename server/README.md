@@ -31,6 +31,11 @@ Podés crear un archivo `.env` en la carpeta `server` (copiá `.env.example` y e
 
 Si `SMTP_USER` o `SMTP_PASS` no están configurados, el cambio de contraseña se guarda pero no se envía ningún email.
 
+- **Facturas Lightning (Recibir → Lightning)**: para generar facturas BOLT11 reales (con QR y dirección cobrable), configurá en `.env`:
+  - `LNBITS_URL`: URL de tu instancia LNbits (ej. `https://lnbits.com`, sin barra final).
+  - `LNBITS_INVOICE_KEY`: la "Invoice/Read Key" de una wallet en LNbits (API Info en la wallet).
+  Si no están configurados, se devuelve una factura de prueba (solo para probar la pantalla).
+
 ## Endpoints
 
 ### POST `/api/register`

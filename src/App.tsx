@@ -1,6 +1,7 @@
 import { Routes, Route, Outlet } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
+import { LanguageProvider } from './context/LanguageContext'
 import { RequireAuth } from './components/RequireAuth'
 import { Layout } from './components/Layout'
 import { Login } from './pages/Login'
@@ -9,10 +10,12 @@ import { Dashboard } from './pages/Dashboard'
 import { Mercado } from './pages/Mercado'
 import { MercadoAsset } from './pages/MercadoAsset'
 import { Send } from './pages/Send'
+import { ReceiveSelect } from './pages/ReceiveSelect'
 import { Receive } from './pages/Receive'
 import { History } from './pages/History'
 import { Settings } from './pages/Settings'
 import { Security } from './pages/Security'
+import { Language } from './pages/Language'
 import { Appearance } from './pages/Appearance'
 import { Notifications } from './pages/Notifications'
 import { Configuracion } from './pages/Configuracion'
@@ -24,6 +27,7 @@ import { NotificationProvider } from './context/NotificationContext'
 
 export default function App() {
   return (
+    <LanguageProvider>
     <ThemeProvider>
     <AuthProvider>
     <NotificationProvider>
@@ -45,10 +49,12 @@ export default function App() {
           <Route path="mercado" element={<Mercado />} />
           <Route path="mercado/:assetId" element={<MercadoAsset />} />
           <Route path="send" element={<Send />} />
-          <Route path="receive" element={<Receive />} />
+          <Route path="receive" element={<ReceiveSelect />} />
+          <Route path="receive/:asset" element={<Receive />} />
           <Route path="history" element={<History />} />
           <Route path="settings" element={<Settings />} />
           <Route path="security" element={<Security />} />
+          <Route path="language" element={<Language />} />
           <Route path="appearance" element={<Appearance />} />
           <Route path="notifications" element={<Notifications />} />
           <Route path="configuration" element={<Configuracion />} />
@@ -61,5 +67,6 @@ export default function App() {
     </NotificationProvider>
     </AuthProvider>
     </ThemeProvider>
+    </LanguageProvider>
   )
 }

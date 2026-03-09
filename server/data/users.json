@@ -26,10 +26,11 @@
     "password_salt": "01c0b381b2fb6d50ffb0e50dfa0c44bc",
     "password_hash": "9843cc74bdf4eb811dd818616bcef2e4e1f2e4a0c591193b838b24c29263df321dc58141c77328f7450345a98746a72200f526e14ff42eb7a619282d5189a1af",
     "created_at": "2026-03-08 06:08:45",
-    "btc_address": "bc1qeckqh08kkwxj387pghvr3usxv0052z8are32lt",
-    "usdt_address": "0xFb548AD2AdEeE767Cef9ac24696642A5D4CA2Dd5",
-    "encrypted_seed": "Q7zc5MiIJq43ER2YyAjufuTPpHDRDcZgwaUo+5q5X9xBZctgpScLpBPFQEZPByXB9uplXW2jjJv/m5EUB/MioJtf+ryiuZtuUNMrtyih/MzfL0FXWXiYeRToFkLfsDuCxpGF5JFTXQTka7O2",
-    "seed_salt": "XjjP/jycbxsWhZXitbpzew==",
-    "totp_secret": "LZ6VMJKUPVTS4KBRM55F4MCYKV4TMO2C"
+    "btc_address": "bc1q233zg8lswtrjas0gvjlk0j09w7x6peh0hyrj97",
+    "usdt_address": "0xBA6288497248b170f36AF152a452B1EFf4b72f56",
+    "encrypted_seed": "eQ2z8dxdTh672Ir1I16utaV+g+UpY9YJ+6Yo6wWODD/NMn8ir8eY8e0Dd9/tLwezcz2jmAMb7AQORgr8pFcNJH7nzM+O3gkTz+rBygeYYGIO0y+oEPvfXV5EeoKsNuamuZWcwhhN",
+    "seed_salt": "O7/4cuz6Nkju2aVo2UkdcA==",
+    "totp_secret": "LZ6VMJKUPVTS4KBRM55F4MCYKV4TMO2C",
+    "doge_address": "DSNZ2m8zabWo5hHqmBVJ9gNPee6uSBaZi2"
   }
 ]

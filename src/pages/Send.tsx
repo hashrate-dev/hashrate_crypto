@@ -6,22 +6,28 @@ import { initialWalletState, getAssetSymbol, type AssetType, type Balance } from
 import { useMempoolBtc } from '../hooks/useMempoolBtc'
 import { useUsdtBalance } from '../hooks/useUsdtBalance'
 import { useDogeBalance } from '../hooks/useDogeBalance'
+import { useLtcBalance } from '../hooks/useLtcBalance'
+import { useEthBalance } from '../hooks/useEthBalance'
 import { useWalletAddresses } from '../hooks/useWalletAddresses'
 import { getNotifyOnSend } from '../store/notifications'
 import { useAuth } from '../context/AuthContext'
 import { playSendSound } from '../lib/sounds'
 import { verifyTotp } from '../api/users'
+import { ETH_LOGO_URL } from '../lib/assetLogos'
 
 type Step = 'asset' | 'amount' | 'address' | 'confirm'
 
-const ASSET_OPTIONS: { id: AssetType; label: string; sub: string; icon: string; iconClass: string }[] = [
-  { id: 'btc', label: 'Bitcoin', sub: 'Red base', icon: '₿', iconClass: 'text-btc' },
-  { id: 'btc_lightning', label: 'Lightning', sub: 'Instantáneo, bajas comisiones', icon: '₿', iconClass: 'text-btc' },
-  { id: 'usdt', label: 'USDT', sub: 'Red ERC-20', icon: '₮', iconClass: 'text-emerald-400' },
-  { id: 'doge', label: 'Dogecoin', sub: 'Red Dogecoin', icon: 'Ð', iconClass: 'text-amber-300' },
+/** Mismos fondos de ícono que en Activos (AssetRow). */
+const ASSET_OPTIONS: { id: AssetType; label: string; sub: string; icon: string; iconClass: string; iconBg: string; disabled?: boolean }[] = [
+  { id: 'btc', label: 'Bitcoin', sub: 'Red base', icon: '₿', iconClass: 'text-btc', iconBg: 'bg-btc/20' },
+  { id: 'usdt', label: 'USDT', sub: 'Red ERC-20', icon: '₮', iconClass: 'text-emerald-400', iconBg: 'bg-usdt/20' },
+  { id: 'doge', label: 'Dogecoin', sub: 'Red Dogecoin', icon: 'Ð', iconClass: 'text-amber-300', iconBg: 'bg-amber-200/20' },
+  { id: 'ltc', label: 'Litecoin', sub: 'Red Litecoin', icon: 'Ł', iconClass: 'text-slate-300', iconBg: 'bg-slate-400/20' },
+  { id: 'eth', label: 'Ethereum', sub: 'Red Ethereum', icon: 'Ξ', iconClass: 'text-indigo-400', iconBg: 'bg-indigo-400/20' },
+  { id: 'btc_lightning', label: 'Lightning', sub: 'Instantáneo, bajas comisiones', icon: '₿', iconClass: 'text-btc', iconBg: 'bg-lightning/20', disabled: true },
 ]
 
-const VALID_ASSETS: AssetType[] = ['btc', 'btc_lightning', 'usdt', 'doge']
+const VALID_ASSETS: AssetType[] = ['btc', 'btc_lightning', 'usdt', 'doge', 'ltc', 'eth']
 
 export function Send() {
   const { user } = useAuth()
@@ -35,7 +41,6 @@ export function Send() {
   const [amount, setAmount] = useState('')
   const [address, setAddress] = useState('')
   const [lightningInvoice, setLightningInvoice] = useState('')
-  const [lightningUser, setLightningUser] = useState('')
   const [error, setError] = useState('')
   const [showSentAlert, setShowSentAlert] = useState(false)
   const [showTotpModal, setShowTotpModal] = useState(false)
@@ -44,59 +49,51 @@ export function Send() {
   const [totpLoading, setTotpLoading] = useState(false)
 
   const { balances: baseBalances } = initialWalletState
-  const { btcAddress, usdtAddress, dogeAddress, hasLinkedWallet } = useWalletAddresses()
+  const { btcAddress, usdtAddress, dogeAddress, ltcAddress, ethAddress, hasLinkedWallet } = useWalletAddresses()
   const { balanceBtc: mempoolBtc } = useMempoolBtc(btcAddress)
   const { balanceUsdt: usdtBalance } = useUsdtBalance(usdtAddress)
   const { balanceDoge: dogeBalance } = useDogeBalance(dogeAddress)
+  const { balanceLtc: ltcBalance } = useLtcBalance(ltcAddress)
+  const { balanceEth: ethBalance } = useEthBalance(ethAddress)
   const balances = useMemo((): Balance[] => {
     return baseBalances.map((b) => {
       if (b.asset === 'btc') return { ...b, amount: mempoolBtc ?? '0' }
       if (b.asset === 'usdt') return { ...b, amount: usdtBalance ?? '0' }
       if (b.asset === 'doge') return { ...b, amount: dogeBalance ?? '0' }
+      if (b.asset === 'ltc') return { ...b, amount: ltcBalance ?? '0' }
+      if (b.asset === 'eth') return { ...b, amount: ethBalance ?? '0' }
       if (b.asset === 'btc_lightning') return { ...b, amount: hasLinkedWallet ? b.amount : '0' }
       return b
     })
-  }, [baseBalances, mempoolBtc, usdtBalance, dogeBalance, hasLinkedWallet])
+  }, [baseBalances, mempoolBtc, usdtBalance, dogeBalance, ltcBalance, ethBalance, hasLinkedWallet])
   const balanceForAsset = asset ? balances.find(b => b.asset === asset) : null
 
   const isLightning = asset === 'btc_lightning'
 
-  // Al volver desde Revisar: rellenar Factura o Usuario Lightning. Si llegás al paso sin destino, pre-rellenar con tu email.
+  // Al volver desde Revisar: rellenar factura Lightning si el destino es lnbc...
   useEffect(() => {
     if (step !== 'address' || !isLightning) return
-    if (address) {
-      if (address.toLowerCase().startsWith('lnbc')) {
-        setLightningInvoice(address)
-        setLightningUser('')
-      } else if (address.includes('@')) {
-        setLightningUser(address)
-        setLightningInvoice('')
-      }
-    } else if (user?.email) {
-      setLightningUser((prev) => (prev === '' ? user.email : prev))
+    if (address && address.toLowerCase().startsWith('lnbc')) {
+      setLightningInvoice(address)
     }
-  }, [step, isLightning, address, user?.email])
-  const addressPlaceholder = asset === 'usdt'
+  }, [step, isLightning, address])
+  const addressPlaceholder = asset === 'usdt' || asset === 'eth'
     ? '0x...'
     : asset === 'doge'
     ? 'D...'
+    : asset === 'ltc'
+    ? 'ltc1...'
     : 'bc1q...'
 
   const validateAddress = () => {
     if (isLightning) {
       const inv = lightningInvoice.trim()
-      const user = lightningUser.trim()
       if (inv && inv.toLowerCase().startsWith('lnbc')) {
         setAddress(inv)
         setError('')
         return true
       }
-      if (user && user.includes('@')) {
-        setAddress(user)
-        setError('')
-        return true
-      }
-      setError('Ingresá una factura Lightning (lnbc...) o un usuario Lightning (ej. usuario@dominio.com).')
+      setError('Ingresá una factura Lightning (lnbc...).')
       return false
     }
     if (!address.trim()) {
@@ -113,6 +110,14 @@ export function Send() {
     }
     if (asset === 'doge' && !address.startsWith('D')) {
       setError('Dirección Dogecoin debe empezar por D.')
+      return false
+    }
+    if (asset === 'ltc' && !address.startsWith('ltc1') && !address.startsWith('L') && !address.startsWith('3')) {
+      setError('Dirección Litecoin no válida (ltc1..., L... o 3...).')
+      return false
+    }
+    if (asset === 'eth' && !address.startsWith('0x')) {
+      setError('Dirección Ethereum debe empezar por 0x.')
       return false
     }
     setError('')
@@ -143,26 +148,17 @@ export function Send() {
     if (step === 'amount') setStep('asset')
     else if (step === 'address') {
       setStep('amount')
-      if (isLightning) {
-        setLightningInvoice('')
-        setLightningUser('')
-      }
+      if (isLightning) setLightningInvoice('')
     } else if (step === 'confirm') {
       setStep('address')
-      if (isLightning && address) {
-        if (address.toLowerCase().startsWith('lnbc')) {
-          setLightningInvoice(address)
-          setLightningUser('')
-        } else if (address.includes('@')) {
-          setLightningUser(address)
-          setLightningInvoice('')
-        }
+      if (isLightning && address && address.toLowerCase().startsWith('lnbc')) {
+        setLightningInvoice(address)
       }
     }
   }
 
   return (
-    <div className="px-4 pt-10 pb-8">
+    <div className="px-4 pt-6 pb-8">
       <div className="flex items-center gap-3 mb-8">
         <Link to="/" className="p-2 -ml-2 rounded-xl hover:bg-white/5 transition-colors">
           <ArrowLeft className="w-5 h-5 text-white/80" />
@@ -177,39 +173,62 @@ export function Send() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
-            className="space-y-3"
+            className="space-y-2"
           >
-            <p className="text-white/60 text-sm mb-4">Elige el activo a enviar</p>
-            {ASSET_OPTIONS.map((opt) => (
-              <motion.button
-                key={opt.id}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => { setAsset(opt.id); setError(''); }}
-                className={`w-full glass rounded-2xl p-4 flex items-center gap-4 text-left transition-all ${
-                  asset === opt.id ? 'ring-2 ring-exodus/50 bg-exodus/10 border-exodus/30' : 'glass-hover border-white/10'
-                }`}
-              >
-                <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center">
-                  <span className={`text-3xl font-bold ${opt.iconClass}`}>{opt.icon}</span>
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-white">{opt.label}</p>
-                  <p className="text-sm text-white/50">{opt.sub}</p>
-                </div>
-                <p className="font-mono text-sm text-white/70">
-                  {balances.find(b => b.asset === opt.id)?.amount} {getAssetSymbol(opt.id)}
-                </p>
-              </motion.button>
-            ))}
-            {asset && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="pt-4">
-                <button
-                  onClick={handleNext}
-                  className="w-full py-4 rounded-2xl bg-exodus text-white font-semibold hover:bg-exodus-dark transition-colors"
+            <p className="text-white/50 text-sm mb-6">Elegí el activo a enviar. Luego indicá monto y destino.</p>
+            {ASSET_OPTIONS.map((opt) =>
+              opt.disabled ? (
+                <div
+                  key={opt.id}
+                  className="block w-full glass rounded-2xl border border-white/5 p-4 text-left opacity-60 cursor-not-allowed"
+                  aria-disabled
                 >
-                  Continuar
-                </button>
-              </motion.div>
+                  <div className="flex items-center gap-4">
+                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center shrink-0 border border-white/10 ${opt.iconBg}`}>
+                      {opt.id === 'eth' ? (
+                        <img src={ETH_LOGO_URL} alt="" className="w-8 h-8 object-contain opacity-70" />
+                      ) : (
+                        <span className={`text-2xl font-bold ${opt.iconClass}`}>{opt.icon}</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-white/70">{opt.label}</p>
+                      <p className="text-sm text-white/40 truncate">{opt.sub}</p>
+                    </div>
+                    <span className="text-white/30 text-xs shrink-0">Próximamente</span>
+                  </div>
+                </div>
+              ) : (
+                <motion.button
+                  key={opt.id}
+                  type="button"
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => {
+                    setAsset(opt.id)
+                    setError('')
+                    setStep('amount')
+                  }}
+                  className="block w-full glass rounded-2xl border border-white/5 p-4 text-left transition-all hover:bg-white/5 hover:border-white/10 active:scale-[0.99]"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center shrink-0 border border-white/10 ${opt.iconBg}`}>
+                      {opt.id === 'eth' ? (
+                        <img src={ETH_LOGO_URL} alt="" className="w-8 h-8 object-contain" />
+                      ) : (
+                        <span className={`text-2xl font-bold ${opt.iconClass}`}>{opt.icon}</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-white">{opt.label}</p>
+                      <p className="text-sm text-white/50 truncate">{opt.sub}</p>
+                      <p className="font-mono text-xs text-white/40 mt-0.5">
+                        {balances.find(b => b.asset === opt.id)?.amount} {getAssetSymbol(opt.id)}
+                      </p>
+                    </div>
+                    <SendIcon className="w-5 h-5 text-white/50 shrink-0" aria-hidden />
+                  </div>
+                </motion.button>
+              )
             )}
           </motion.div>
         )}
@@ -278,35 +297,49 @@ export function Send() {
                     className="w-full bg-transparent text-white placeholder:text-white/30 outline-none resize-none font-mono text-sm"
                   />
                 </div>
-                <p className="text-white/60 text-sm mb-2">Usuario Lightning</p>
-                <div className="glass rounded-2xl p-4 mb-4">
-                  <input
-                    type="text"
-                    inputMode="email"
-                    placeholder="usuario@dominio.com"
-                    value={lightningUser}
-                    onChange={(e) => { setLightningUser(e.target.value); setError(''); }}
-                    className="w-full bg-transparent text-white placeholder:text-white/30 outline-none font-mono text-sm"
-                  />
-                </div>
                 <p className="text-white/40 text-xs mb-4">
-                
+                  Pegá la factura (código de pago) que te pasó quien recibe.
                 </p>
               </>
             ) : (
               <>
-                {asset === 'btc' ? (
+                {asset === 'btc' && (
                   <>
                     <p className="text-white font-medium mb-1">Red Bitcoin</p>
                     <p className="text-white/70 text-sm mb-4">
                       Ingresá la dirección Bitcoin (on-chain) de quien recibe. Podés pegarla o escanear el QR.
                     </p>
                   </>
-                ) : (
+                )}
+                {asset === 'usdt' && (
                   <>
                     <p className="text-white font-medium mb-1">Red ERC-20 (Ethereum)</p>
                     <p className="text-white/70 text-sm mb-4">
-                      Ingresá la dirección Ethereum de quien recibe (para USDT en la red de Ethereum).
+                      Ingresá la dirección Ethereum de quien recibe (para USDT).
+                    </p>
+                  </>
+                )}
+                {asset === 'doge' && (
+                  <>
+                    <p className="text-white font-medium mb-1">Red Dogecoin</p>
+                    <p className="text-white/70 text-sm mb-4">
+                      Ingresá la dirección Dogecoin de quien recibe.
+                    </p>
+                  </>
+                )}
+                {asset === 'ltc' && (
+                  <>
+                    <p className="text-white font-medium mb-1">Red Litecoin</p>
+                    <p className="text-white/70 text-sm mb-4">
+                      Ingresá la dirección Litecoin de quien recibe (ltc1..., L... o 3...).
+                    </p>
+                  </>
+                )}
+                {asset === 'eth' && (
+                  <>
+                    <p className="text-white font-medium mb-1">Red Ethereum</p>
+                    <p className="text-white/70 text-sm mb-4">
+                      Ingresá la dirección Ethereum (0x) de quien recibe.
                     </p>
                   </>
                 )}
@@ -337,6 +370,16 @@ export function Send() {
                 {asset === 'doge' && (
                   <p className="text-white/50 text-xs mb-4">
                     ✓ La dirección Dogecoin debe empezar con <span className="font-mono text-white/60">D</span>. Red principal de Dogecoin.
+                  </p>
+                )}
+                {asset === 'ltc' && (
+                  <p className="text-white/50 text-xs mb-4">
+                    ✓ Dirección Litecoin: <span className="font-mono text-white/60">ltc1...</span> (segwit), <span className="font-mono text-white/60">L</span> o <span className="font-mono text-white/60">3</span>. Red principal.
+                  </p>
+                )}
+                {asset === 'eth' && (
+                  <p className="text-white/50 text-xs mb-4">
+                    ✓ La dirección Ethereum debe empezar con <span className="font-mono text-white/60">0x</span>. Red principal de Ethereum.
                   </p>
                 )}
               </>
@@ -406,7 +449,6 @@ export function Send() {
                     setAmount('')
                     setAddress('')
                     setLightningInvoice('')
-                    setLightningUser('')
                     setShowSentAlert(true)
                   }
                 }}
@@ -482,7 +524,6 @@ export function Send() {
                       setAmount('')
                       setAddress('')
                       setLightningInvoice('')
-                      setLightningUser('')
                       setShowSentAlert(true)
                     } catch (e) {
                       setTotpError(e instanceof Error ? e.message : 'Código incorrecto')

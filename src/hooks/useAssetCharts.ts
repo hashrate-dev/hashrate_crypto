@@ -3,7 +3,7 @@ import type { AssetType } from '../store/wallet'
 import { assetChartData as fallbackChartData } from '../store/wallet'
 import { fetchAllAssetCharts, type CurrentPrices } from '../api/prices'
 
-const fallbackPrices: CurrentPrices = { btc: 67000, usdt: 1, doge: 0.1 }
+const fallbackPrices: CurrentPrices = { btc: 67000, usdt: 1, doge: 0.1, ltc: 95, eth: 3500 }
 
 export function useAssetCharts(): {
   chartData: Record<AssetType, number[]>

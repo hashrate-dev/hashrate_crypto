@@ -1,6 +1,5 @@
-const API_BASE = import.meta.env.DEV
-  ? 'http://localhost:3001'
-  : (typeof import.meta.env?.VITE_API_URL === 'string' ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '')
+// Solo localhost: backend en 3001, datos en server/data/
+const API_BASE = import.meta.env.DEV ? 'http://127.0.0.1:3001' : ''
 
 export interface RegisterPayload {
   email: string
@@ -28,6 +27,8 @@ export interface User {
   btcAddress?: string | null
   usdtAddress?: string | null
   dogeAddress?: string | null
+  ltcAddress?: string | null
+  ethAddress?: string | null
   lightningAddress?: string | null
   totpEnabled?: boolean
 }
@@ -37,17 +38,26 @@ export interface RegisterResponse {
   user: User
 }
 
+/** Mensaje cuando el backend no está en marcha (connection refused / failed to fetch). */
+export const BACKEND_NOT_RUNNING_MSG =
+  'El backend no está corriendo. Ejecutá desde la raíz del proyecto: npm run dev (arranca backend + frontend en http://127.0.0.1:3001 y Vite).'
+
 export async function registerUser(data: RegisterPayload): Promise<RegisterResponse> {
-  const res = await fetch(`${API_BASE}/api/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-  const json = await parseJsonResponse(res)
-  if (!res.ok) {
-    throw new Error((json?.error as string) ?? 'Error al registrar')
+  try {
+    const res = await fetch(`${API_BASE}/api/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    const json = await parseJsonResponse(res)
+    if (!res.ok) throw new Error((json?.error as string) ?? 'Error al registrar')
+    return json as RegisterResponse
+  } catch (err) {
+    if (err instanceof Error && /failed to fetch|network error|connection refused|err_connection_refused/i.test(err.message)) {
+      throw new Error(BACKEND_NOT_RUNNING_MSG)
+    }
+    throw err
   }
-  return json as RegisterResponse
 }
 
 export async function getUserById(id: number): Promise<{ user: User }> {
@@ -70,14 +80,21 @@ export interface LoginPayload {
 }
 
 export async function loginUser(data: LoginPayload): Promise<{ user: User }> {
-  const res = await fetch(`${API_BASE}/api/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: data.email.trim(), password: data.password }),
-  })
-  const json = await parseJsonResponse(res)
-  if (!res.ok) throw new Error((json?.error as string) ?? 'Error al iniciar sesión')
-  return json as { user: User }
+  try {
+    const res = await fetch(`${API_BASE}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: data.email.trim(), password: data.password }),
+    })
+    const json = await parseJsonResponse(res)
+    if (!res.ok) throw new Error((json?.error as string) ?? 'Error al iniciar sesión')
+    return json as { user: User }
+  } catch (err) {
+    if (err instanceof Error && /failed to fetch|network error|connection refused|err_connection_refused/i.test(err.message)) {
+      throw new Error(BACKEND_NOT_RUNNING_MSG)
+    }
+    throw err
+  }
 }
 
 export interface UpdateUserPayload {
@@ -166,6 +183,8 @@ export interface UpdateWalletsPayload {
   btcAddress: string
   usdtAddress: string
   dogeAddress?: string
+  ltcAddress?: string
+  ethAddress?: string
   encryptedSeed?: string
   seedSalt?: string
   password?: string
@@ -187,6 +206,24 @@ export async function getEncryptedSeed(id: number): Promise<{ encryptedSeed: str
   const json = await res.json()
   if (!res.ok) throw new Error((json?.error as string) ?? 'Error al obtener la frase')
   return json as { encryptedSeed: string; seedSalt: string }
+}
+
+/** Generar código de pago Lightning (factura BOLT11) para recibir. Como en Binance: factura con QR. */
+export async function createLightningInvoice(
+  id: number,
+  options?: { amountSats?: number; description?: string }
+): Promise<{ invoice: string; expiresIn?: number }> {
+  const res = await fetch(`${API_BASE}/api/users/${id}/lightning-invoice`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      amountSats: options?.amountSats,
+      description: options?.description,
+    }),
+  })
+  const json = await parseJsonResponse(res)
+  if (!res.ok) throw new Error((json?.error as string) ?? 'Error al generar el código de pago')
+  return json as { invoice: string; expiresIn?: number }
 }
 
 /** Google Authenticator: obtener secreto y URL para QR (no activa hasta enable). */

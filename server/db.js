@@ -108,7 +108,7 @@ export function verifyUserPassword(email, password) {
 
 /**
  * Actualiza un usuario por ID. Devuelve la fila actualizada o null si no existe.
- * row: { email?, first_name?, second_name?, first_surname?, second_surname?, btc_address?, usdt_address?, lightning_address?, encrypted_seed?, seed_salt? }
+ * Persiste en disco (users.json). row puede incluir: btc_address, usdt_address, doge_address, ltc_address, eth_address, lightning_address, encrypted_seed, seed_salt, etc.
  */
 export function updateUser(id, row) {
   load()
@@ -125,6 +125,8 @@ export function updateUser(id, row) {
     btc_address: row.btc_address !== undefined ? (row.btc_address != null ? String(row.btc_address).trim() : null) : current.btc_address,
     usdt_address: row.usdt_address !== undefined ? (row.usdt_address != null ? String(row.usdt_address).trim() : null) : current.usdt_address,
     doge_address: row.doge_address !== undefined ? (row.doge_address != null ? String(row.doge_address).trim() : null) : current.doge_address,
+    ltc_address: row.ltc_address !== undefined ? (row.ltc_address != null ? String(row.ltc_address).trim() : null) : current.ltc_address,
+    eth_address: row.eth_address !== undefined ? (row.eth_address != null ? String(row.eth_address).trim() : null) : current.eth_address,
     lightning_address: row.lightning_address !== undefined ? (row.lightning_address != null ? String(row.lightning_address).trim() : null) : current.lightning_address,
     encrypted_seed: row.encrypted_seed !== undefined ? (row.encrypted_seed != null ? String(row.encrypted_seed) : null) : current.encrypted_seed,
     seed_salt: row.seed_salt !== undefined ? (row.seed_salt != null ? String(row.seed_salt) : null) : current.seed_salt,

@@ -9,15 +9,22 @@ import { useWalletAddresses } from '../hooks/useWalletAddresses'
 import { useMempoolBtc } from '../hooks/useMempoolBtc'
 import { useUsdtBalance } from '../hooks/useUsdtBalance'
 import { useDogeBalance } from '../hooks/useDogeBalance'
+import { useLtcBalance } from '../hooks/useLtcBalance'
+import { useEthBalance } from '../hooks/useEthBalance'
+import { ETH_LOGO_URL } from '../lib/assetLogos'
 
-const ASSET_INFO: Record<string, { name: string; symbol: string; subtitle?: string; variant: 'btc' | 'lightning' | 'usdt' | 'doge'; icon: string | null }> = {
+const ASSET_INFO: Record<string, { name: string; symbol: string; subtitle?: string; variant: 'btc' | 'lightning' | 'usdt' | 'doge' | 'ltc' | 'eth'; icon: string | null }> = {
   btc: { name: 'Bitcoin', symbol: 'BTC', variant: 'btc', icon: '₿' },
   btc_lightning: { name: 'Bitcoin', symbol: 'BTC', subtitle: 'Lightning', variant: 'lightning', icon: '₿' },
   usdt: { name: 'Tether', symbol: 'USDT', variant: 'usdt', icon: '₮' },
   doge: { name: 'Dogecoin', symbol: 'DOGE', variant: 'doge', icon: 'Ð' },
+  ltc: { name: 'Litecoin', symbol: 'LTC', variant: 'ltc', icon: 'Ł' },
+  eth: { name: 'Ethereum', symbol: 'ETH', variant: 'eth', icon: 'Ξ' },
 }
 
 const RANGES: ChartRange[] = ['1m', '5m', '15m', '4h', '1d', '1w', '1M']
+
+type BtcNetwork = 'btc' | 'btc_lightning'
 
 export function MercadoAsset() {
   const { assetId } = useParams<{ assetId: string }>()
@@ -27,8 +34,11 @@ export function MercadoAsset() {
   const [currentPrice, setCurrentPrice] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  /** Solo para assetId === 'btc': red base o Lightning. */
+  const [btcNetwork, setBtcNetwork] = useState<BtcNetwork>('btc')
 
   const info = assetId ? ASSET_INFO[assetId] : null
+  const isBtcUnified = assetId === 'btc'
 
   // Precio actual: se obtiene una vez por activo, no cambia con la temporalidad
   useEffect(() => {
@@ -39,8 +49,8 @@ export function MercadoAsset() {
       .catch(() => { if (!cancelled) setCurrentPrice(0) })
     return () => { cancelled = true }
   }, [assetId])
-  const chartColor = info?.variant === 'lightning' ? 'rgb(139, 92, 246)' : info?.variant === 'usdt' ? 'rgb(34, 197, 94)' : info?.variant === 'doge' ? 'rgb(198, 166, 100)' : 'rgb(247, 147, 26)'
-  const chartColorDown = info?.variant === 'btc' || info?.variant === 'doge' ? chartColor : 'rgb(239, 68, 68)'
+  const chartColor = info?.variant === 'lightning' ? 'rgb(139, 92, 246)' : info?.variant === 'usdt' ? 'rgb(34, 197, 94)' : info?.variant === 'doge' ? 'rgb(198, 166, 100)' : info?.variant === 'ltc' ? 'rgb(148, 163, 184)' : info?.variant === 'eth' ? 'rgb(99, 102, 241)' : 'rgb(247, 147, 26)'
+  const chartColorDown = info?.variant === 'btc' || info?.variant === 'doge' || info?.variant === 'ltc' ? chartColor : 'rgb(239, 68, 68)'
 
   const prevAssetId = useRef<string | undefined>(undefined)
   // Carga inicial y al cambiar rango; no mostrar "Cargando..." si ya hay gráfico (cambio de temporalidad)
@@ -99,26 +109,34 @@ export function MercadoAsset() {
   if (!info) return null
 
   const assetType = assetId as AssetType
-  const { btcAddress, usdtAddress, dogeAddress, hasLinkedWallet } = useWalletAddresses()
+  const { btcAddress, usdtAddress, dogeAddress, ltcAddress, ethAddress, hasLinkedWallet } = useWalletAddresses()
   const { balanceBtc: mempoolBtc } = useMempoolBtc(btcAddress)
   const { balanceUsdt: usdtBalance } = useUsdtBalance(usdtAddress)
   const { balanceDoge: dogeBalance } = useDogeBalance(dogeAddress)
+  const { balanceLtc: ltcBalance } = useLtcBalance(ltcAddress)
+  const { balanceEth: ethBalance } = useEthBalance(ethAddress)
+
+  const lightningBalance = hasLinkedWallet ? (initialWalletState.balances.find((b) => b.asset === 'btc_lightning')?.amount ?? '0') : '0'
 
   const amount = useMemo(() => {
+    if (isBtcUnified) return btcNetwork === 'btc' ? (mempoolBtc ?? '0') : lightningBalance
     if (assetType === 'btc') return mempoolBtc ?? '0'
     if (assetType === 'usdt') return usdtBalance ?? '0'
     if (assetType === 'doge') return dogeBalance ?? '0'
-    if (assetType === 'btc_lightning') return hasLinkedWallet ? (initialWalletState.balances.find((b) => b.asset === 'btc_lightning')?.amount ?? '0') : '0'
+    if (assetType === 'ltc') return ltcBalance ?? '0'
+    if (assetType === 'eth') return ethBalance ?? '0'
+    if (assetType === 'btc_lightning') return lightningBalance
     return '0'
-  }, [assetType, mempoolBtc, usdtBalance, dogeBalance, hasLinkedWallet])
+  }, [assetType, isBtcUnified, btcNetwork, mempoolBtc, usdtBalance, dogeBalance, ltcBalance, ethBalance, lightningBalance])
 
   const amountNum = parseFloat(amount)
   const valueUsd = currentPrice > 0 ? amountNum * currentPrice : 0
   // Actividad: no mostrar nada si no hay historial real (no usar transacciones demo)
   const activity: { id: string; type: 'send' | 'receive'; amount: string; amountUsd?: string; counterparty: string; asset: AssetType }[] = []
 
+  const effectiveAssetType: AssetType = isBtcUnified ? btcNetwork : assetType
   const formatAmount = (val: string) =>
-    assetType === 'usdt' ? parseFloat(val).toFixed(2) : parseFloat(val).toFixed(8)
+    effectiveAssetType === 'usdt' ? parseFloat(val).toFixed(2) : effectiveAssetType === 'eth' ? parseFloat(val).toFixed(6) : parseFloat(val).toFixed(8)
   const formatUsd = (val: number) =>
     val >= 1 ? val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : val.toFixed(2)
 
@@ -135,11 +153,13 @@ export function MercadoAsset() {
         <div className="flex-1 flex items-center gap-3">
           <div
             className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-              info.variant === 'btc' ? 'bg-btc/20' : info.variant === 'lightning' ? 'bg-lightning/20' : info.variant === 'doge' ? 'bg-amber-200/20' : 'bg-usdt/20'
+              info.variant === 'btc' ? 'bg-btc/20' : info.variant === 'lightning' ? 'bg-lightning/20' : info.variant === 'doge' ? 'bg-amber-200/20' : info.variant === 'ltc' ? 'bg-slate-400/20' : info.variant === 'eth' ? 'bg-indigo-400/20' : 'bg-usdt/20'
             }`}
           >
-            {info.icon ? (
-              <span className={`text-4xl font-bold ${info.variant === 'btc' || info.variant === 'lightning' ? 'text-btc' : info.variant === 'doge' ? 'text-amber-300' : 'text-emerald-400'}`}>
+            {info.variant === 'eth' ? (
+              <img src={ETH_LOGO_URL} alt="" className="w-10 h-10 object-contain" />
+            ) : info.icon ? (
+              <span className={`text-4xl font-bold ${info.variant === 'btc' || info.variant === 'lightning' ? 'text-btc' : info.variant === 'doge' ? 'text-amber-300' : info.variant === 'ltc' ? 'text-slate-300' : 'text-emerald-400'}`}>
                 {info.icon}
               </span>
             ) : (
@@ -153,7 +173,29 @@ export function MercadoAsset() {
         </div>
       </div>
 
-
+      {/* Selector de red solo para Bitcoin: Red base o Lightning */}
+      {isBtcUnified && (
+        <div className="flex gap-2 p-1 glass rounded-xl mb-4">
+          <button
+            type="button"
+            onClick={() => setBtcNetwork('btc')}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              btcNetwork === 'btc' ? 'bg-btc/20 text-btc border border-btc/40' : 'text-white/60 hover:text-white/80 border border-transparent'
+            }`}
+          >
+            Red base (BTC)
+          </button>
+          <button
+            type="button"
+            onClick={() => setBtcNetwork('btc_lightning')}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              btcNetwork === 'btc_lightning' ? 'bg-lightning/20 text-violet-400 border border-violet-400/40' : 'text-white/60 hover:text-white/80 border border-transparent'
+            }`}
+          >
+            Lightning
+          </button>
+        </div>
+      )}
 
       <div className="mb-4">
         <p className="text-3xl font-bold font-mono text-white">
@@ -220,15 +262,14 @@ export function MercadoAsset() {
       <div className="mt-6 grid grid-cols-2 gap-3">
         <Link
           to="/send"
-          state={{ asset: assetId }}
+          state={{ asset: isBtcUnified ? effectiveAssetType : assetId }}
           className="flex items-center justify-center gap-2 py-4 rounded-2xl border border-white/20 bg-white/5 text-white font-medium hover:bg-white/10 transition-colors"
         >
           <Send className="w-5 h-5" />
           Enviar
         </Link>
         <Link
-          to="/receive"
-          state={{ tab: assetId === 'btc_lightning' ? 'lightning' : (assetId as string) }}
+          to={`/receive/${isBtcUnified ? (btcNetwork === 'btc_lightning' ? 'lightning' : 'btc') : (assetId === 'btc_lightning' ? 'lightning' : (assetId as string))}`}
           className="flex items-center justify-center gap-2 py-4 rounded-2xl border border-white/20 bg-white/5 text-white font-medium hover:bg-white/10 transition-colors"
         >
           <ArrowDownToLine className="w-5 h-5" />

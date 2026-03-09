@@ -1,13 +1,24 @@
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Copy, Check, KeyRound, AlertTriangle, Link2, Lock, Eye, EyeOff } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { generateSeedPhraseAndWallets, type DerivedWallets } from '../lib/seedPhrase'
+import { generateSeedPhraseAndWallets, deriveAddressesFromMnemonic, type DerivedWallets } from '../lib/seedPhrase'
 import { encryptSeed, decryptSeed } from '../lib/seedEncryption'
 import { useAuth } from '../context/AuthContext'
 import { updateUserWallets, getEncryptedSeed } from '../api/users'
 
 type PasswordPurpose = 'link' | 'view' | 'replace'
+
+/** Al generar frase semilla se derivan todas las direcciones; este payload las envía al usuario para almacenarlas (BTC, USDT, DOGE, LTC, ETH). */
+function allAddressesPayload(derived: DerivedWallets) {
+  return {
+    btcAddress: derived.btcAddress,
+    usdtAddress: derived.ethAddress,
+    dogeAddress: derived.dogeAddress,
+    ltcAddress: derived.ltcAddress,
+    ethAddress: derived.ethAddress,
+  }
+}
 
 function AnimatedPhrase({ phrase, className = '' }: { phrase: string; className?: string }) {
   const words = phrase.trim().split(/\s+/).filter(Boolean)
@@ -31,7 +42,7 @@ function AnimatedPhrase({ phrase, className = '' }: { phrase: string; className?
 export function SeedPhraseGenerator() {
   const { user, setUser } = useAuth()
   const [result, setResult] = useState<DerivedWallets | null>(null)
-  const [copied, setCopied] = useState<'phrase' | 'btc' | 'eth' | 'doge' | 'ln' | null>(null)
+  const [copied, setCopied] = useState<'phrase' | 'btc' | 'eth' | 'doge' | 'ltc' | 'ln' | null>(null)
   const [revealed, setRevealed] = useState(false)
   const [linking, setLinking] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
@@ -41,6 +52,12 @@ export function SeedPhraseGenerator() {
   const [passwordValue, setPasswordValue] = useState('')
   const [viewedPhrase, setViewedPhrase] = useState<string | null>(null)
   const [replaceResult, setReplaceResult] = useState<DerivedWallets | null>(null)
+
+  // Al iniciar esta página no mostrar la frase: siempre oculta hasta que el usuario pida verla con contraseña.
+  useEffect(() => {
+    setViewedPhrase(null)
+    setReplaceResult(null)
+  }, [])
 
   const handleGenerate = () => {
     const derived = generateSeedPhraseAndWallets()
@@ -52,13 +69,13 @@ export function SeedPhraseGenerator() {
     setReplaceResult(null)
   }
 
-  const copy = (text: string, key: 'phrase' | 'btc' | 'eth' | 'doge' | 'ln') => {
+  const copy = (text: string, key: 'phrase' | 'btc' | 'eth' | 'doge' | 'ltc' | 'ln') => {
     navigator.clipboard.writeText(text)
     setCopied(key)
     setTimeout(() => setCopied(null), 2000)
   }
 
-  const copyLinked = (text: string, key: 'btc' | 'eth' | 'doge') => {
+  const copyLinked = (text: string, key: 'btc' | 'eth' | 'doge' | 'ltc') => {
     navigator.clipboard.writeText(text)
     setCopied(key)
     setTimeout(() => setCopied(null), 2000)
@@ -78,10 +95,9 @@ export function SeedPhraseGenerator() {
     try {
       if (passwordPurpose === 'link' && result) {
         const { salt, encrypted } = await encryptSeed(result.mnemonic, passwordValue.trim())
+        // Al vincular: guardar frase cifrada y TODAS las direcciones derivadas (BTC, USDT, DOGE, LTC, ETH) en el usuario.
         const { user: updated } = await updateUserWallets(user.id, {
-          btcAddress: result.btcAddress,
-          usdtAddress: result.ethAddress,
-          dogeAddress: result.dogeAddress,
+          ...allAddressesPayload(result),
           encryptedSeed: encrypted,
           seedSalt: salt,
         })
@@ -92,19 +108,32 @@ export function SeedPhraseGenerator() {
         const { encryptedSeed, seedSalt } = await getEncryptedSeed(user.id)
         const phrase = await decryptSeed(encryptedSeed, seedSalt, passwordValue.trim())
         setViewedPhrase(phrase)
+        const needsLtcOrEth = !user?.ltcAddress?.trim() || !user?.ethAddress?.trim()
+        if (needsLtcOrEth) {
+          const derived = deriveAddressesFromMnemonic(phrase)
+          const { user: updated } = await updateUserWallets(user.id, {
+            btcAddress: user.btcAddress ?? derived.btcAddress,
+            usdtAddress: user.usdtAddress ?? derived.ethAddress,
+            dogeAddress: user.dogeAddress ?? derived.dogeAddress,
+            ltcAddress: derived.ltcAddress,
+            ethAddress: derived.ethAddress,
+            password: passwordValue.trim(),
+          })
+          setUser(updated)
+        }
         setShowPasswordModal(false)
       } else if (passwordPurpose === 'replace') {
         const derived = generateSeedPhraseAndWallets()
         const { salt, encrypted } = await encryptSeed(derived.mnemonic, passwordValue.trim())
+        // Al reemplazar: guardar todas las direcciones derivadas (BTC, USDT, DOGE, LTC, ETH) en el usuario.
         const { user: updated } = await updateUserWallets(user.id, {
-          btcAddress: derived.btcAddress,
-          usdtAddress: derived.ethAddress,
-          dogeAddress: derived.dogeAddress,
+          ...allAddressesPayload(derived),
           encryptedSeed: encrypted,
           seedSalt: salt,
           password: passwordValue.trim(),
         })
         setUser(updated)
+        setViewedPhrase(null)
         setReplaceResult(derived)
         setShowPasswordModal(false)
       }
@@ -115,7 +144,30 @@ export function SeedPhraseGenerator() {
     }
   }
 
-  const alreadyHasLinkedWallets = Boolean(user?.btcAddress?.trim() || user?.usdtAddress?.trim() || user?.dogeAddress?.trim())
+  const alreadyHasLinkedWallets = Boolean(user?.btcAddress?.trim() || user?.usdtAddress?.trim() || user?.dogeAddress?.trim() || user?.ltcAddress?.trim() || user?.ethAddress?.trim())
+
+  /** Cuando la frase está visible, mostramos direcciones derivadas de esa frase (incl. Litecoin); si no, las del usuario. */
+  const displayedAddresses = useMemo(() => {
+    if (!viewedPhrase?.trim()) return null
+    try {
+      const d = deriveAddressesFromMnemonic(viewedPhrase)
+      return {
+        btcAddress: d.btcAddress,
+        usdtAddress: d.ethAddress,
+        dogeAddress: d.dogeAddress,
+        ltcAddress: d.ltcAddress,
+        ethAddress: d.ethAddress,
+      }
+    } catch {
+      return null
+    }
+  }, [viewedPhrase])
+
+  const showBtc = displayedAddresses?.btcAddress ?? user?.btcAddress ?? ''
+  const showUsdt = displayedAddresses?.usdtAddress ?? user?.usdtAddress ?? ''
+  const showDoge = displayedAddresses?.dogeAddress ?? user?.dogeAddress ?? ''
+  const showLtc = displayedAddresses?.ltcAddress ?? user?.ltcAddress ?? ''
+  const showEth = displayedAddresses?.ethAddress ?? user?.ethAddress ?? user?.usdtAddress ?? ''
 
   return (
     <div className="px-4 pt-6 pb-8">
@@ -203,15 +255,22 @@ export function SeedPhraseGenerator() {
 
           <button
             type="button"
-            onClick={() => (viewedPhrase ? setViewedPhrase(null) : openPasswordModal('view'))}
+            onClick={() => {
+              if (viewedPhrase || replaceResult) {
+                setViewedPhrase(null)
+                setReplaceResult(null)
+              } else {
+                openPasswordModal('view')
+              }
+            }}
             className={`w-full py-4 rounded-2xl font-medium flex items-center justify-center gap-2 transition-colors ${
-              viewedPhrase
+              viewedPhrase || replaceResult
                 ? 'border border-exodus/60 bg-exodus/10 text-exodus hover:bg-exodus/20'
                 : 'bg-white/10 border border-white/10 text-white hover:bg-white/15'
             }`}
           >
-            {viewedPhrase ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-            {viewedPhrase ? 'Ocultar frase semilla' : 'Ver frase semilla'}
+            {viewedPhrase || replaceResult ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            {viewedPhrase || replaceResult ? 'Ocultar frase semilla' : 'Ver frase semilla'}
           </button>
 
           {viewedPhrase && (
@@ -230,44 +289,65 @@ export function SeedPhraseGenerator() {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: 0.15 }}
-                className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-3"
+                className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-2"
               >
                 <p className="text-emerald-200 font-medium text-sm">Wallets conectadas</p>
-                <p className="text-white/70 text-xs">Direcciones vinculadas a tu cuenta a partir de esta frase.</p>
-                <div className="space-y-3">
+                <p className="text-white/70 text-xs -mt-0.5">Direcciones vinculadas a tu cuenta a partir de esta frase.</p>
+                <div className="space-y-2">
                   <div>
-                    <p className="text-white/60 text-xs mb-1">Bitcoin (red base)</p>
+                    <p className="text-white/60 text-xs mb-0.5">Bitcoin (red base)</p>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{user?.btcAddress ?? ''}</code>
-                      <button type="button" onClick={() => user?.btcAddress && copyLinked(user.btcAddress, 'btc')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{showBtc}</code>
+                      <button type="button" onClick={() => showBtc && copyLinked(showBtc, 'btc')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
                         {copied === 'btc' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
                   <div>
-                    <p className="text-white/60 text-xs mb-1">Ethereum (USDT / ERC-20)</p>
+                    <p className="text-white/60 text-xs mb-0.5">Lightning</p>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{user?.usdtAddress ?? ''}</code>
-                      <button type="button" onClick={() => user?.usdtAddress && copyLinked(user.usdtAddress, 'eth')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{user?.lightningAddress || user?.email || ''}</code>
+                      <button type="button" onClick={() => copy(user?.lightningAddress || user?.email || '', 'ln')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                        {copied === 'ln' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-white/60 text-xs mb-0.5">Ethereum (USDT / ERC-20)</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{showUsdt}</code>
+                      <button type="button" onClick={() => showUsdt && copyLinked(showUsdt, 'eth')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
                         {copied === 'eth' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
                   <div>
-                    <p className="text-white/60 text-xs mb-1">Dogecoin</p>
+                    <p className="text-white/60 text-xs mb-0.5">Dogecoin</p>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{user?.dogeAddress ?? ''}</code>
-                      <button type="button" onClick={() => user?.dogeAddress && copyLinked(user.dogeAddress, 'doge')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{showDoge}</code>
+                      <button type="button" onClick={() => showDoge && copyLinked(showDoge, 'doge')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
                         {copied === 'doge' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
                   <div>
-                    <p className="text-white/60 text-xs mb-1">Lightning</p>
+                    <p className="text-white/60 text-xs mb-0.5">Litecoin</p>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{user?.lightningAddress || user?.email || ''}</code>
-                      <button type="button" onClick={() => copy(user?.lightningAddress || user?.email || '', 'ln')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
-                        {copied === 'ln' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{showLtc}</code>
+                      <button type="button" onClick={() => showLtc && copyLinked(showLtc, 'ltc')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                        {copied === 'ltc' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    {!showLtc && (
+                      <p className="text-amber-200/80 text-xs mt-1.5">Entrá a &quot;Ver frase semilla&quot;, ingresá tu contraseña y se generará la dirección Litecoin (y Ethereum) automáticamente.</p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-white/60 text-xs mb-0.5">Ethereum (ETH)</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{showEth}</code>
+                      <button type="button" onClick={() => showEth && copyLinked(showEth, 'eth')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                        {copied === 'eth' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
@@ -277,20 +357,85 @@ export function SeedPhraseGenerator() {
           )}
 
           {replaceResult && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="space-y-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4"
-            >
-              <p className="text-emerald-200 font-medium text-sm">Nueva frase vinculada. Guardala en un lugar seguro.</p>
-              <AnimatedPhrase phrase={replaceResult.mnemonic} className="text-white" />
-              <button type="button" onClick={() => copy(replaceResult.mnemonic, 'phrase')} className="flex items-center gap-2 text-white/80 text-xs">
-                {copied === 'phrase' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                {copied === 'phrase' ? 'Copiado' : 'Copiar frase'}
-              </button>
-              <p className="text-white/60 text-xs mt-2">Bitcoin: {replaceResult.btcAddress}</p>
-              <p className="text-white/60 text-xs">Ethereum: {replaceResult.ethAddress}</p>
-              <p className="text-white/60 text-xs">Dogecoin: {replaceResult.dogeAddress}</p>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+              <p className="text-amber-200/90 text-xs rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2">
+                La frase semilla anterior fue reemplazada: ya no está guardada ni vinculada a esta cuenta. Solo esta nueva frase controla las direcciones que ves en la app. Si tenías la frase vieja anotada, ya no da acceso a esta cuenta.
+              </p>
+              <div className="space-y-3">
+                <p className="text-white/60 text-sm">Frase de 12 palabras</p>
+                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+                  <AnimatedPhrase phrase={replaceResult.mnemonic} className="text-white" />
+                  <button type="button" onClick={() => copy(replaceResult.mnemonic, 'phrase')} className="mt-2 flex items-center gap-2 text-white/60 hover:text-white text-xs">
+                    {copied === 'phrase' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    {copied === 'phrase' ? 'Copiado' : 'Copiar frase'}
+                  </button>
+                </div>
+              </div>
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.15 }}
+                className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-2"
+              >
+                <p className="text-emerald-200 font-medium text-sm">Wallets conectadas</p>
+                <p className="text-white/70 text-xs -mt-0.5">Direcciones vinculadas a tu cuenta a partir de esta frase.</p>
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-white/60 text-xs mb-0.5">Bitcoin (red base)</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{replaceResult.btcAddress}</code>
+                      <button type="button" onClick={() => copy(replaceResult.btcAddress, 'btc')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                        {copied === 'btc' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-white/60 text-xs mb-0.5">Lightning</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{user?.lightningAddress || user?.email || '—'}</code>
+                      <button type="button" onClick={() => copy(user?.lightningAddress || user?.email || '', 'ln')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                        {copied === 'ln' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-white/60 text-xs mb-0.5">Ethereum (USDT / ERC-20)</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{replaceResult.ethAddress}</code>
+                      <button type="button" onClick={() => copy(replaceResult.ethAddress, 'eth')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                        {copied === 'eth' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-white/60 text-xs mb-0.5">Dogecoin</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{replaceResult.dogeAddress}</code>
+                      <button type="button" onClick={() => copy(replaceResult.dogeAddress, 'doge')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                        {copied === 'doge' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-white/60 text-xs mb-0.5">Litecoin</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{replaceResult.ltcAddress}</code>
+                      <button type="button" onClick={() => copy(replaceResult.ltcAddress, 'ltc')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                        {copied === 'ltc' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-white/60 text-xs mb-0.5">Ethereum (ETH)</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 font-mono text-sm text-white/90 break-all min-w-0">{replaceResult.ethAddress}</code>
+                      <button type="button" onClick={() => copy(replaceResult.ethAddress, 'eth')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80">
+                        {copied === 'eth' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
             </motion.div>
           )}
 
@@ -361,52 +506,44 @@ export function SeedPhraseGenerator() {
             </div>
           </div>
 
-          <div>
-            <p className="text-white/60 text-sm mb-2">Dirección Bitcoin (red base)</p>
-            <div className="glass rounded-2xl border border-white/5 p-4 flex items-center gap-2">
-              <code className="flex-1 font-mono text-sm text-white/80 break-all min-w-0">
-                {result.btcAddress}
-              </code>
-              <button
-                type="button"
-                onClick={() => copy(result.btcAddress, 'btc')}
-                className="shrink-0 p-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/80"
-              >
-                {copied === 'btc' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-              </button>
-            </div>
+          <div className="glass rounded-2xl border border-white/5 p-4 flex items-center gap-2">
+            <p className="text-white/90 text-sm shrink-0"><strong>Bitcoin:</strong></p>
+            <code className="flex-1 font-mono text-sm text-white/80 break-all min-w-0">{result.btcAddress}</code>
+            <button type="button" onClick={() => copy(result.btcAddress, 'btc')} className="shrink-0 p-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/80">
+              {copied === 'btc' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+            </button>
           </div>
 
-          <div>
-            <p className="text-white/60 text-sm mb-2">Dirección Ethereum (USDT / ERC-20)</p>
-            <div className="glass rounded-2xl border border-white/5 p-4 flex items-center gap-2">
-              <code className="flex-1 font-mono text-sm text-white/80 break-all min-w-0">
-                {result.ethAddress}
-              </code>
-              <button
-                type="button"
-                onClick={() => copy(result.ethAddress, 'eth')}
-                className="shrink-0 p-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/80"
-              >
-                {copied === 'eth' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-              </button>
-            </div>
+          <div className="glass rounded-2xl border border-white/5 p-4 flex items-center gap-2">
+            <p className="text-white/90 text-sm shrink-0"><strong>Ethereum:</strong></p>
+            <code className="flex-1 font-mono text-sm text-white/80 break-all min-w-0">{result.ethAddress}</code>
+            <button type="button" onClick={() => copy(result.ethAddress, 'eth')} className="shrink-0 p-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/80">
+              {copied === 'eth' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+            </button>
           </div>
 
-          <div>
-            <p className="text-white/60 text-sm mb-2">Dirección Dogecoin</p>
-            <div className="glass rounded-2xl border border-white/5 p-4 flex items-center gap-2">
-              <code className="flex-1 font-mono text-sm text-white/80 break-all min-w-0">
-                {result.dogeAddress}
-              </code>
-              <button
-                type="button"
-                onClick={() => copy(result.dogeAddress, 'doge')}
-                className="shrink-0 p-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/80"
-              >
-                {copied === 'doge' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-              </button>
-            </div>
+          <div className="glass rounded-2xl border border-white/5 p-4 flex items-center gap-2">
+            <p className="text-white/90 text-sm shrink-0"><strong>Litecoin:</strong></p>
+            <code className="flex-1 font-mono text-sm text-white/80 break-all min-w-0">{result.ltcAddress}</code>
+            <button type="button" onClick={() => copy(result.ltcAddress, 'ltc')} className="shrink-0 p-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/80">
+              {copied === 'ltc' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+            </button>
+          </div>
+
+          <div className="glass rounded-2xl border border-white/5 p-4 flex items-center gap-2">
+            <p className="text-white/90 text-sm shrink-0"><strong>Dogecoin:</strong></p>
+            <code className="flex-1 font-mono text-sm text-white/80 break-all min-w-0">{result.dogeAddress}</code>
+            <button type="button" onClick={() => copy(result.dogeAddress, 'doge')} className="shrink-0 p-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/80">
+              {copied === 'doge' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+            </button>
+          </div>
+
+          <div className="glass rounded-2xl border border-white/5 p-4 flex items-center gap-2">
+            <p className="text-white/90 text-sm shrink-0"><strong>Lightning:</strong></p>
+            <code className="flex-1 font-mono text-sm text-white/80 break-all min-w-0">{user?.lightningAddress || user?.email || '—'}</code>
+            <button type="button" onClick={() => copy(user?.lightningAddress || user?.email || '', 'ln')} className="shrink-0 p-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/80">
+              {copied === 'ln' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+            </button>
           </div>
 
           {linkError && (

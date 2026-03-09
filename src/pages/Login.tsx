@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { Mail, LogIn, UserPlus, Lock, Eye, EyeOff } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useLanguage } from '../context/LanguageContext'
 
 export function Login() {
   const [email, setEmail] = useState('')
@@ -11,17 +12,18 @@ export function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const { login } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     if (!email.trim()) {
-      setError('Ingresa tu email.')
+      setError(t('enter_email'))
       return
     }
     if (!password) {
-      setError('Ingresa tu contraseña.')
+      setError(t('enter_password'))
       return
     }
     setLoading(true)
@@ -29,7 +31,7 @@ export function Login() {
       await login(email.trim(), password)
       navigate('/', { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Email o contraseña incorrectos.')
+      setError(err instanceof Error ? err.message : t('wrong_credentials'))
     } finally {
       setLoading(false)
     }
@@ -51,8 +53,8 @@ export function Login() {
               <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-white">Imperium Wallet</h1>
-          <p className="text-white/50 text-sm mt-1">Inicia sesión para continuar</p>
+          <h1 className="text-2xl font-bold text-white">{t('imperium_wallet')}</h1>
+          <p className="text-white/50 text-sm mt-1">{t('login_continue')}</p>
         </div>
 
         <form
@@ -66,7 +68,7 @@ export function Login() {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-white/70 mb-1.5">Email</label>
+            <label className="block text-sm font-medium text-white/70 mb-1.5">{t('email')}</label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
               <input
@@ -82,7 +84,7 @@ export function Login() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-white/70 mb-1.5">Contraseña</label>
+            <label className="block text-sm font-medium text-white/70 mb-1.5">{t('password')}</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
               <input
@@ -114,29 +116,29 @@ export function Login() {
             {loading ? (
               <>
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Entrando...
+                {t('entering')}
               </>
             ) : (
               <>
                 <LogIn className="w-5 h-5" />
-                Entrar
+                {t('enter')}
               </>
             )}
           </button>
 
           <div className="pt-2 border-t border-white/10">
-            <p className="text-center text-white/50 text-sm mb-3">¿No tienes cuenta?</p>
+            <p className="text-center text-white/50 text-sm mb-3">{t('no_account')}</p>
             <Link
               to="/register"
               className="w-full py-3 rounded-xl border border-white/20 text-white/80 hover:bg-white/5 font-medium flex items-center justify-center gap-2 transition-colors"
             >
               <UserPlus className="w-5 h-5" />
-              Registrarse
+              {t('register')}
             </Link>
           </div>
         </form>
 
-        <p className="text-center text-white/30 text-xs mt-6">Imperium Wallet</p>
+        <p className="text-center text-white/30 text-xs mt-6">{t('imperium_wallet')}</p>
         </motion.div>
       </div>
     </div>
