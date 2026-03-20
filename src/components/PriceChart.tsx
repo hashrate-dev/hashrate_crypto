@@ -242,7 +242,7 @@ export function PriceChart({
         >
           {hoverPrice >= 1
             ? `$${hoverPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-            : `$${hoverPrice.toFixed(4)}`}
+            : `$${hoverPrice.toFixed(priceLabelDecimals ?? 4)}`}
         </div>
       )}
     </div>

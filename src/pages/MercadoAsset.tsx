@@ -11,15 +11,17 @@ import { useUsdtBalance } from '../hooks/useUsdtBalance'
 import { useDogeBalance } from '../hooks/useDogeBalance'
 import { useLtcBalance } from '../hooks/useLtcBalance'
 import { useEthBalance } from '../hooks/useEthBalance'
-import { ETH_LOGO_URL } from '../lib/assetLogos'
+import { useSolBalance } from '../hooks/useSolBalance'
+import { ETH_LOGO_URL, SOL_LOGO_URL } from '../lib/assetLogos'
 
-const ASSET_INFO: Record<string, { name: string; symbol: string; subtitle?: string; variant: 'btc' | 'lightning' | 'usdt' | 'doge' | 'ltc' | 'eth'; icon: string | null }> = {
+const ASSET_INFO: Record<string, { name: string; symbol: string; subtitle?: string; variant: 'btc' | 'lightning' | 'usdt' | 'doge' | 'ltc' | 'eth' | 'sol'; icon: string | null }> = {
   btc: { name: 'Bitcoin', symbol: 'BTC', variant: 'btc', icon: '₿' },
   btc_lightning: { name: 'Bitcoin', symbol: 'BTC', subtitle: 'Lightning', variant: 'lightning', icon: '₿' },
   usdt: { name: 'Tether', symbol: 'USDT', variant: 'usdt', icon: '₮' },
   doge: { name: 'Dogecoin', symbol: 'DOGE', variant: 'doge', icon: 'Ð' },
   ltc: { name: 'Litecoin', symbol: 'LTC', variant: 'ltc', icon: 'Ł' },
   eth: { name: 'Ethereum', symbol: 'ETH', variant: 'eth', icon: 'Ξ' },
+  sol: { name: 'Solana', symbol: 'SOL', variant: 'sol', icon: 'SOL' },
 }
 
 const RANGES: ChartRange[] = ['1m', '5m', '15m', '4h', '1d', '1w', '1M']
@@ -40,17 +42,24 @@ export function MercadoAsset() {
   const info = assetId ? ASSET_INFO[assetId] : null
   const isBtcUnified = assetId === 'btc'
 
-  // Precio actual: se obtiene una vez por activo, no cambia con la temporalidad
+  // Precio actual: backend Binance. No mostrar 0.0000 mientras actualiza: mantener último precio.
   useEffect(() => {
     if (!assetId || !ASSET_INFO[assetId]) return
     let cancelled = false
-    fetchCurrentPrice(assetId)
-      .then((p) => { if (!cancelled) setCurrentPrice(p) })
-      .catch(() => { if (!cancelled) setCurrentPrice(0) })
+    const load = () =>
+      fetchCurrentPrice(assetId).then((p) => {
+        if (!cancelled) setCurrentPrice((prev) => (p > 0 ? p : prev))
+        if (p === 0 && !cancelled) {
+          [1500, 4000].forEach((delay) => {
+            setTimeout(() => fetchCurrentPrice(assetId).then((p2) => { if (!cancelled && p2 > 0) setCurrentPrice(p2) }), delay)
+          })
+        }
+      }).catch(() => { /* mantener último precio; no poner 0 */ })
+    load()
     return () => { cancelled = true }
   }, [assetId])
-  const chartColor = info?.variant === 'lightning' ? 'rgb(139, 92, 246)' : info?.variant === 'usdt' ? 'rgb(34, 197, 94)' : info?.variant === 'doge' ? 'rgb(198, 166, 100)' : info?.variant === 'ltc' ? 'rgb(148, 163, 184)' : info?.variant === 'eth' ? 'rgb(99, 102, 241)' : 'rgb(247, 147, 26)'
-  const chartColorDown = info?.variant === 'btc' || info?.variant === 'doge' || info?.variant === 'ltc' ? chartColor : 'rgb(239, 68, 68)'
+  const chartColor = info?.variant === 'lightning' ? 'rgb(139, 92, 246)' : info?.variant === 'usdt' ? 'rgb(34, 197, 94)' : info?.variant === 'doge' ? 'rgb(198, 166, 100)' : info?.variant === 'ltc' ? 'rgb(148, 163, 184)' : info?.variant === 'eth' ? 'rgb(59, 130, 246)' : info?.variant === 'sol' ? 'rgb(0, 255, 163)' : 'rgb(247, 147, 26)'
+  const chartColorDown = info?.variant === 'btc' || info?.variant === 'doge' || info?.variant === 'ltc' || info?.variant === 'usdt' || info?.variant === 'eth' || info?.variant === 'sol' ? chartColor : 'rgb(239, 68, 68)'
 
   const prevAssetId = useRef<string | undefined>(undefined)
   // Carga inicial y al cambiar rango; no mostrar "Cargando..." si ya hay gráfico (cambio de temporalidad)
@@ -93,15 +102,15 @@ export function MercadoAsset() {
     })
   }, [assetId, range, chartData.length])
 
-  // Auto-refresh cada 15 s
+  // Auto-refresh cada 10 s (precio al instante como Binance)
   useEffect(() => {
     if (!assetId || !ASSET_INFO[assetId]) return
-    const ms = 15_000
+    const ms = 10_000
     const interval = setInterval(() => {
       fetchMarketChartByRange(assetId, range)
         .then((prices) => setChartData(prices))
         .catch(() => {})
-      fetchCurrentPrice(assetId).then((p) => setCurrentPrice(p)).catch(() => {})
+      fetchCurrentPrice(assetId).then((p) => setCurrentPrice((prev) => (p > 0 ? p : prev))).catch(() => {})
     }, ms)
     return () => clearInterval(interval)
   }, [assetId, range])
@@ -109,12 +118,13 @@ export function MercadoAsset() {
   if (!info) return null
 
   const assetType = assetId as AssetType
-  const { btcAddress, usdtAddress, dogeAddress, ltcAddress, ethAddress, hasLinkedWallet } = useWalletAddresses()
+  const { btcAddress, usdtAddress, dogeAddress, ltcAddress, ethAddress, solAddress, hasLinkedWallet } = useWalletAddresses()
   const { balanceBtc: mempoolBtc } = useMempoolBtc(btcAddress)
   const { balanceUsdt: usdtBalance } = useUsdtBalance(usdtAddress)
   const { balanceDoge: dogeBalance } = useDogeBalance(dogeAddress)
   const { balanceLtc: ltcBalance } = useLtcBalance(ltcAddress)
   const { balanceEth: ethBalance } = useEthBalance(ethAddress)
+  const { balanceSol: solBalance, error: solBalanceError, refetch: refetchSol } = useSolBalance(solAddress)
 
   const lightningBalance = hasLinkedWallet ? (initialWalletState.balances.find((b) => b.asset === 'btc_lightning')?.amount ?? '0') : '0'
 
@@ -125,18 +135,21 @@ export function MercadoAsset() {
     if (assetType === 'doge') return dogeBalance ?? '0'
     if (assetType === 'ltc') return ltcBalance ?? '0'
     if (assetType === 'eth') return ethBalance ?? '0'
+    if (assetType === 'sol') return solBalance ?? '0'
     if (assetType === 'btc_lightning') return lightningBalance
     return '0'
-  }, [assetType, isBtcUnified, btcNetwork, mempoolBtc, usdtBalance, dogeBalance, ltcBalance, ethBalance, lightningBalance])
+  }, [assetType, isBtcUnified, btcNetwork, mempoolBtc, usdtBalance, dogeBalance, ltcBalance, ethBalance, solBalance, lightningBalance])
 
   const amountNum = parseFloat(amount)
-  const valueUsd = currentPrice > 0 ? amountNum * currentPrice : 0
+  /** Precio a mostrar: actual o último del gráfico si el endpoint de precio falló */
+  const displayPrice = currentPrice > 0 ? currentPrice : (chartData.length > 0 ? chartData[chartData.length - 1] : 0)
+  const valueUsd = displayPrice > 0 ? amountNum * displayPrice : 0
   // Actividad: no mostrar nada si no hay historial real (no usar transacciones demo)
   const activity: { id: string; type: 'send' | 'receive'; amount: string; amountUsd?: string; counterparty: string; asset: AssetType }[] = []
 
   const effectiveAssetType: AssetType = isBtcUnified ? btcNetwork : assetType
   const formatAmount = (val: string) =>
-    effectiveAssetType === 'usdt' ? parseFloat(val).toFixed(2) : effectiveAssetType === 'eth' ? parseFloat(val).toFixed(6) : parseFloat(val).toFixed(8)
+    effectiveAssetType === 'usdt' || effectiveAssetType === 'doge' ? parseFloat(val).toFixed(2) : effectiveAssetType === 'eth' ? parseFloat(val).toFixed(6) : effectiveAssetType === 'sol' ? parseFloat(val).toFixed(4) : parseFloat(val).toFixed(8)
   const formatUsd = (val: number) =>
     val >= 1 ? val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : val.toFixed(2)
 
@@ -153,11 +166,13 @@ export function MercadoAsset() {
         <div className="flex-1 flex items-center gap-3">
           <div
             className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-              info.variant === 'btc' ? 'bg-btc/20' : info.variant === 'lightning' ? 'bg-lightning/20' : info.variant === 'doge' ? 'bg-amber-200/20' : info.variant === 'ltc' ? 'bg-slate-400/20' : info.variant === 'eth' ? 'bg-indigo-400/20' : 'bg-usdt/20'
+              info.variant === 'btc' ? 'bg-btc/20' : info.variant === 'lightning' ? 'bg-lightning/20' : info.variant === 'doge' ? 'bg-amber-200/20' : info.variant === 'ltc' ? 'bg-slate-400/20' : info.variant === 'eth' ? 'bg-indigo-400/20' : info.variant === 'sol' ? 'bg-emerald-400/20' : 'bg-usdt/20'
             }`}
           >
             {info.variant === 'eth' ? (
               <img src={ETH_LOGO_URL} alt="" className="w-10 h-10 object-contain" />
+            ) : info.variant === 'sol' ? (
+              <img src={SOL_LOGO_URL} alt="" className="w-10 h-10 object-contain" />
             ) : info.icon ? (
               <span className={`text-4xl font-bold ${info.variant === 'btc' || info.variant === 'lightning' ? 'text-btc' : info.variant === 'doge' ? 'text-amber-300' : info.variant === 'ltc' ? 'text-slate-300' : 'text-emerald-400'}`}>
                 {info.icon}
@@ -199,9 +214,9 @@ export function MercadoAsset() {
 
       <div className="mb-4">
         <p className="text-3xl font-bold font-mono text-white">
-          ${currentPrice >= 1
-            ? currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-            : currentPrice.toFixed(4)}
+          ${displayPrice >= 1
+            ? displayPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            : assetType === 'doge' ? displayPrice.toFixed(5) : assetType === 'sol' ? displayPrice.toFixed(4) : displayPrice.toFixed(4)}
         </p>
       </div>
 
@@ -239,17 +254,30 @@ export function MercadoAsset() {
             height={240}
             className="w-full"
             id={`${assetId}-${range}`}
+            priceLabelDecimals={assetType === 'doge' ? 5 : undefined}
           />
         )}
       </div>
 
-      {/* Cantidad y valor en USD (estilo Exodus) */}
+      {/* Cantidad y valor en USD (estilo Exodus). Saldo SOL desde la blockchain (RPC Solana). */}
       <div className="mt-6 grid grid-cols-2 gap-3">
         <div className="glass rounded-2xl border border-white/5 p-4">
           <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Cantidad</p>
           <p className="text-lg font-semibold font-mono text-white">
             {formatAmount(amount)} <span className="text-white/60">{info.symbol}</span>
           </p>
+          {assetType === 'sol' && solBalanceError && (
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <p className="text-xs text-amber-400/90">{solBalanceError}</p>
+              <button
+                type="button"
+                onClick={() => refetchSol()}
+                className="text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30"
+              >
+                Reintentar
+              </button>
+            </div>
+          )}
         </div>
         <div className="glass rounded-2xl border border-white/5 p-4">
           <p className="text-xs text-white/50 uppercase tracking-wider mb-1">Valor</p>
@@ -283,7 +311,7 @@ export function MercadoAsset() {
         <h2 className="text-sm font-medium text-white/60 mb-3">Actividad</h2>
         <div className="glass rounded-2xl border border-white/5 overflow-hidden divide-y divide-white/5">
           {activity.map((tx) => {
-              const txValueUsd = currentPrice > 0 ? parseFloat(tx.amount) * currentPrice : parseFloat(tx.amountUsd ?? '0')
+              const txValueUsd = displayPrice > 0 ? parseFloat(tx.amount) * displayPrice : parseFloat(tx.amountUsd ?? '0')
               return (
                 <div
                   key={tx.id}

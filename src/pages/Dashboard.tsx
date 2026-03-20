@@ -1,24 +1,29 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { Send, QrCode, ArrowUpRight, ArrowDownLeft, Zap, X } from 'lucide-react'
 import { AssetRow } from '../components/AssetRow'
 import { PortfolioDonut, type PortfolioSegment } from '../components/PortfolioDonut'
-import { initialWalletState, getTotalUsd, getAssetPrimaryName, getAssetSecondaryName, getAssetSymbol, type Balance } from '../store/wallet'
+import { initialWalletState, getTotalUsd, getAssetPrimaryName, getAssetSecondaryName, getAssetSymbol, formatAmountHistory, type Balance } from '../store/wallet'
 import { useAssetCharts } from '../hooks/useAssetCharts'
 import { useMempoolBtc } from '../hooks/useMempoolBtc'
 import { useUsdtBalance } from '../hooks/useUsdtBalance'
 import { useDogeBalance } from '../hooks/useDogeBalance'
 import { useLtcBalance } from '../hooks/useLtcBalance'
 import { useEthBalance } from '../hooks/useEthBalance'
+import { useSolBalance } from '../hooks/useSolBalance'
 import { useWalletAddresses } from '../hooks/useWalletAddresses'
+import { useWalletTransactions } from '../hooks/useWalletTransactions'
+import { useTheme } from '../context/ThemeContext'
+import { useAuth } from '../context/AuthContext'
+import { postBalanceSnapshot } from '../api/monitor'
 import type { AssetType } from '../store/wallet'
 
 /** Valor en USD del activo: balance × precio actual (Binance). */
 function getAmountUsd(
   amount: string,
   asset: AssetType,
-  currentPrices: { btc: number; usdt: number; doge: number; ltc: number; eth: number } | null,
+  currentPrices: { btc: number; usdt: number; doge: number; ltc: number; eth: number; sol: number } | null,
   fallbackUsd?: string
 ): string {
   if (!currentPrices) return fallbackUsd ?? '0.00'
@@ -28,6 +33,7 @@ function getAmountUsd(
     : asset === 'doge' ? currentPrices.doge
     : asset === 'ltc' ? currentPrices.ltc
     : asset === 'eth' ? currentPrices.eth
+    : asset === 'sol' ? currentPrices.sol
     : currentPrices.btc
   return (n * price).toFixed(2)
 }
@@ -39,18 +45,47 @@ const SEGMENT_COLORS: Record<string, string> = {
   doge: 'rgb(198, 166, 100)',
   ltc: 'rgb(191, 191, 191)',
   eth: 'rgb(98, 126, 234)',
+  sol: 'rgb(0, 255, 163)',
+}
+
+/* En tema claro: colores más saturados para que destaquen sobre fondo blanco */
+const SEGMENT_COLORS_LIGHT: Record<string, string> = {
+  ...SEGMENT_COLORS,
+  ltc: 'rgb(51, 65, 85)',
+  eth: 'rgb(59, 130, 246)',
+  sol: 'rgb(16, 185, 129)',
+  doge: 'rgb(180, 83, 9)',
 }
 
 export function Dashboard() {
   const [breakdownOpen, setBreakdownOpen] = useState(false)
+  const { theme } = useTheme()
+  const { user } = useAuth()
+  const segmentColors = theme === 'light' ? SEGMENT_COLORS_LIGHT : SEGMENT_COLORS
+  const { transactions: walletTxs, loading: txsLoading } = useWalletTransactions()
   const { balances: baseBalances } = initialWalletState
-  const { btcAddress, usdtAddress, dogeAddress, ltcAddress, ethAddress, hasLinkedWallet } = useWalletAddresses()
+  const { btcAddress, usdtAddress, dogeAddress, ltcAddress, ethAddress, solAddress, hasLinkedWallet } = useWalletAddresses()
   const { chartData, currentPrices, loading: chartsLoading, error: chartsError } = useAssetCharts()
+  const lastSnapshotRef = useRef<string>('')
+
+  const getOurAddressShort = (asset: string) => {
+    if (asset === 'btc' && btcAddress) return `${btcAddress.slice(0, 8)}...${btcAddress.slice(-6)}`
+    if (asset === 'sol' && solAddress) return `${solAddress.slice(0, 4)}...${solAddress.slice(-4)}`
+    if (asset === 'doge' && dogeAddress) return `${dogeAddress.slice(0, 8)}...${dogeAddress.slice(-6)}`
+    if (asset === 'ltc' && ltcAddress) return `${ltcAddress.slice(0, 8)}...${ltcAddress.slice(-6)}`
+    if (asset === 'eth' && ethAddress) return `${ethAddress.slice(0, 6)}...${ethAddress.slice(-4)}`
+    return '—'
+  }
+  const getFromLabel = (tx: { type: 'send' | 'receive'; asset: string; counterparty: string }) =>
+    tx.type === 'receive' ? tx.counterparty : getOurAddressShort(tx.asset)
+  const getToLabel = (tx: { type: 'send' | 'receive'; asset: string; counterparty: string }) =>
+    tx.type === 'receive' ? getOurAddressShort(tx.asset) : tx.counterparty
   const { balanceBtc: mempoolBtc } = useMempoolBtc(btcAddress)
   const { balanceUsdt: usdtBalance } = useUsdtBalance(usdtAddress)
   const { balanceDoge: dogeBalance } = useDogeBalance(dogeAddress)
   const { balanceLtc: ltcBalance } = useLtcBalance(ltcAddress)
   const { balanceEth: ethBalance } = useEthBalance(ethAddress)
+  const { balanceSol: solBalance } = useSolBalance(solAddress)
 
   // Cuentas nuevas (sin wallet vinculada): saldo 0 en todo. No usar direcciones ni saldos de ejemplo.
   const balances = useMemo((): Balance[] => {
@@ -60,10 +95,11 @@ export function Dashboard() {
       if (b.asset === 'doge') return { ...b, amount: dogeBalance ?? '0', amountUsd: undefined }
       if (b.asset === 'ltc') return { ...b, amount: ltcBalance ?? '0', amountUsd: undefined }
       if (b.asset === 'eth') return { ...b, amount: ethBalance ?? '0', amountUsd: undefined }
+      if (b.asset === 'sol') return { ...b, amount: solBalance ?? '0', amountUsd: undefined }
       if (b.asset === 'btc_lightning') return { ...b, amount: hasLinkedWallet ? b.amount : '0', amountUsd: hasLinkedWallet ? b.amountUsd : undefined }
       return b
     })
-  }, [baseBalances, mempoolBtc, usdtBalance, dogeBalance, ltcBalance, ethBalance, hasLinkedWallet])
+  }, [baseBalances, mempoolBtc, usdtBalance, dogeBalance, ltcBalance, ethBalance, solBalance, hasLinkedWallet])
 
   /** Lista para mostrar: Bitcoin unificado (red base + Lightning en una sola fila). */
   const displayBalances = useMemo((): Balance[] => {
@@ -99,11 +135,30 @@ export function Dashboard() {
         amount: b.amount,
         valueUsd,
         percent: totalUsdNum > 0 ? (valueUsd / totalUsdNum) * 100 : 0,
-        color: SEGMENT_COLORS[b.asset] ?? 'rgba(255,255,255,0.3)',
+        color: segmentColors[b.asset] ?? (theme === 'light' ? 'rgb(100, 116, 139)' : 'rgba(255,255,255,0.3)'),
       }
     })
     return list
-  }, [displayBalances, currentPrices, totalUsdNum])
+  }, [displayBalances, currentPrices, totalUsdNum, theme, segmentColors])
+
+  // Enviar snapshot de saldos al monitor (por usuario) para que el dashboard de monitor muestre montos por cuenta
+  useEffect(() => {
+    if (!user?.id || !user?.email) return
+    const totalUsd = String(totalUsdNum)
+    const balancesMap: Record<string, string> = {}
+    balances.forEach((b) => {
+      balancesMap[b.asset] = b.amount
+    })
+    const key = `${user.id}-${totalUsd}-${JSON.stringify(balancesMap)}`
+    if (lastSnapshotRef.current === key) return
+    lastSnapshotRef.current = key
+    postBalanceSnapshot({
+      userId: user.id,
+      email: user.email,
+      totalUsd,
+      balances: balancesMap,
+    }).catch(() => {})
+  }, [user?.id, user?.email, totalUsdNum, balances])
 
   return (
     <div className="px-4 pt-6 pb-8">
@@ -187,14 +242,14 @@ export function Dashboard() {
                 {segments.map((seg) => (
                   <div
                     key={seg.asset}
-                    className="flex items-center gap-2 py-2.5 px-3 rounded-xl bg-white/5"
+                    className="flex items-center py-2.5 px-3 rounded-xl bg-white/5"
                   >
-                    <div className="min-w-0 shrink-0 flex-1">
-                      <p className="text-lg font-semibold text-white">{getAssetPrimaryName(seg.asset)}</p>
-                      <p className="text-base text-white/50">{getAssetSecondaryName(seg.asset)}</p>
+                    <div className="w-[100px] min-w-0 shrink-0">
+                      <p className="text-lg font-semibold text-white truncate" title={getAssetPrimaryName(seg.asset)}>{getAssetPrimaryName(seg.asset)}</p>
+                      <p className="text-base text-white/50 truncate" title={getAssetSecondaryName(seg.asset)}>{getAssetSecondaryName(seg.asset)}</p>
                     </div>
-                    {/* Columna fija: círculos alineados uno debajo del otro */}
-                    <div className="w-[28px] flex items-center justify-center shrink-0">
+                    {/* Columna fija: todos los círculos alineados en la misma línea vertical */}
+                    <div className="w-[26px] flex justify-start items-center shrink-0">
                       <div
                         className="rounded-full flex-shrink-0"
                         style={{
@@ -206,8 +261,7 @@ export function Dashboard() {
                         }}
                       />
                     </div>
-                    {/* Columna fija: % alineados en la misma columna */}
-                    <div className="w-[56px] shrink-0 text-right">
+                    <div className="w-[52px] shrink-0">
                       <span
                         className="font-bold tabular-nums text-lg"
                         style={{ color: seg.color }}
@@ -215,10 +269,13 @@ export function Dashboard() {
                         {seg.percent.toFixed(1)}%
                       </span>
                     </div>
+                    <div className="flex-1 min-w-0" />
                     <div className="shrink-0 min-w-[90px] text-right">
                       <p className="font-mono text-sm text-white/80 tabular-nums whitespace-nowrap">
                         {seg.asset === 'usdt'
                           ? parseFloat(seg.amount).toFixed(2)
+                          : seg.asset === 'eth' || seg.asset === 'sol'
+                          ? parseFloat(seg.amount).toFixed(seg.asset === 'sol' ? 4 : 6)
                           : parseFloat(seg.amount).toFixed(8)}
                         {' '}{getAssetSymbol(seg.asset)}
                       </p>
@@ -275,15 +332,15 @@ export function Dashboard() {
               asset={b.asset}
               amount={b.amount}
               amountUsd={getAmountUsd(b.amount, b.asset, currentPrices, b.amountUsd)}
-              variant={b.asset === 'usdt' ? 'usdt' : b.asset === 'doge' ? 'doge' : b.asset === 'ltc' ? 'ltc' : b.asset === 'eth' ? 'eth' : 'btc'}
+              variant={b.asset === 'usdt' ? 'usdt' : b.asset === 'doge' ? 'doge' : b.asset === 'ltc' ? 'ltc' : b.asset === 'eth' ? 'eth' : b.asset === 'sol' ? 'sol' : 'btc'}
               chartData={chartData[b.asset]}
-              currentPrice={currentPrices ? (b.asset === 'usdt' ? currentPrices.usdt : b.asset === 'doge' ? currentPrices.doge : b.asset === 'ltc' ? currentPrices.ltc : b.asset === 'eth' ? currentPrices.eth : currentPrices.btc) : undefined}
+              currentPrice={currentPrices ? (b.asset === 'usdt' ? currentPrices.usdt : b.asset === 'doge' ? currentPrices.doge : b.asset === 'ltc' ? currentPrices.ltc : b.asset === 'eth' ? currentPrices.eth : b.asset === 'sol' ? currentPrices.sol : currentPrices.btc) : undefined}
               delay={i * 0.05}
             />
           </Link>
         ))}
       </div>
-      {hasLinkedWallet && initialWalletState.transactions.length > 0 && (
+      {hasLinkedWallet && (
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -297,38 +354,62 @@ export function Dashboard() {
           </Link>
         </div>
         <div className="glass rounded-2xl border border-white/5 overflow-hidden divide-y divide-white/5">
-          {initialWalletState.transactions.slice(0, 3).map((tx, i) => (
-            <motion.div
-              key={tx.id}
-              initial={{ opacity: 0, x: -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.2 + i * 0.05 }}
-              className="flex items-center gap-4 p-4"
-            >
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                tx.type === 'receive' ? 'bg-emerald-500/20' : 'bg-rose-500/20'
-              }`}>
-                {tx.type === 'receive' ? (
-                  <ArrowDownLeft className="w-5 h-5 text-emerald-400" />
-                ) : (
-                  <ArrowUpRight className="w-5 h-5 text-rose-400" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-white truncate">
-                  {tx.type === 'receive' ? 'Recibido' : 'Enviado'}
-                  {tx.isLightning && <Zap className="inline w-3.5 h-3.5 text-violet-400 ml-1" />}
-                </p>
-                <p className="text-sm text-white/50 break-all">{tx.counterparty}</p>
-              </div>
-              <div className="text-right shrink-0">
-                <p className={`font-mono font-medium ${tx.type === 'receive' ? 'text-emerald-400' : 'text-white'}`}>
-                  {tx.type === 'receive' ? '+' : '-'}{tx.amount} {tx.asset === 'usdt' ? 'USDT' : tx.asset === 'doge' ? 'DOGE' : tx.asset === 'ltc' ? 'LTC' : tx.asset === 'eth' ? 'ETH' : 'BTC'}
-                </p>
-                <p className="text-xs text-white/40">${tx.amountUsd}</p>
-              </div>
-            </motion.div>
-          ))}
+          {txsLoading ? (
+            <div className="p-5 flex items-center justify-center gap-3">
+              <div className="w-5 h-5 border-2 border-exodus/50 border-t-exodus rounded-full animate-spin shrink-0" />
+              <span className="text-sm text-white/60">Cargando actividad…</span>
+            </div>
+          ) : walletTxs.length === 0 ? (
+            <div className="p-4 text-center text-white/50 text-sm">
+              Sin transacciones recientes en esta wallet.
+            </div>
+          ) : (
+            walletTxs.slice(0, 3).map((tx, i) => {
+              const amountFormatted = formatAmountHistory(tx.amount, tx.asset)
+              const symbol = tx.asset === 'usdt' ? 'USDT' : tx.asset === 'doge' ? 'DOGE' : tx.asset === 'ltc' ? 'LTC' : tx.asset === 'eth' ? 'ETH' : tx.asset === 'sol' ? 'SOL' : 'BTC'
+              const usdDisplay = tx.amountUsd != null ? tx.amountUsd : (currentPrices ? getAmountUsd(tx.amount, tx.asset, currentPrices, undefined) : null)
+              return (
+                <motion.div
+                  key={tx.id}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.1 + i * 0.04 }}
+                  className="flex items-center gap-4 p-4"
+                >
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    tx.type === 'receive' ? 'bg-emerald-500/20' : 'bg-rose-500/20'
+                  }`}>
+                    {tx.type === 'receive' ? (
+                      <ArrowDownLeft className="w-5 h-5 text-emerald-400" />
+                    ) : (
+                      <ArrowUpRight className="w-5 h-5 text-rose-400" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-white text-sm">
+                      {tx.type === 'receive' ? 'Recibido' : 'Enviado'}
+                      {tx.isLightning && <Zap className="inline w-3.5 h-3.5 text-violet-400 ml-1" />}
+                      <span className="text-white/60 font-normal ml-1">· {symbol}</span>
+                    </p>
+                    <p className="text-xs font-mono text-white/70 mt-0.5 break-all" title={getFromLabel(tx)}>
+                      FROM: {getFromLabel(tx)}
+                    </p>
+                    <p className="text-xs font-mono text-white/70 mt-0.5 break-all" title={getToLabel(tx)}>
+                      TO: {getToLabel(tx)}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0 min-w-0">
+                    <p className={`font-mono text-sm font-semibold tabular-nums ${tx.type === 'receive' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {tx.type === 'receive' ? '+' : '-'}{amountFormatted} {symbol}
+                    </p>
+                    <p className="text-xs text-white/50 tabular-nums mt-0.5">
+                      {usdDisplay != null ? `$${usdDisplay}` : '—'}
+                    </p>
+                  </div>
+                </motion.div>
+              )
+            })
+          )}
         </div>
       </motion.div>
       )}

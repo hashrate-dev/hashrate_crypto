@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Mail, User, Save, Trash2, AlertTriangle } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { updateUser, deleteUser } from '../api/users'
+import { updateUser, deleteUserWithPassword } from '../api/users'
 
 export function Configuracion() {
   const { user, setUser, logout } = useAuth()
@@ -18,6 +18,8 @@ export function Configuracion() {
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deleteError, setDeleteError] = useState('')
 
   useEffect(() => {
     if (user) {
@@ -59,19 +61,27 @@ export function Configuracion() {
     }
   }
 
-  const openDeleteConfirm = () => setShowDeleteConfirm(true)
+  const openDeleteConfirm = () => {
+    setShowDeleteConfirm(true)
+    setDeletePassword('')
+    setDeleteError('')
+  }
 
   const handleDeleteAccount = async () => {
-    if (!user) return
-    setShowDeleteConfirm(false)
-    setError('')
+    if (!user || !deletePassword.trim()) {
+      setDeleteError('Ingresá tu contraseña para confirmar.')
+      return
+    }
+    setDeleteError('')
     setDeleting(true)
     try {
-      await deleteUser(user.id)
+      await deleteUserWithPassword(user.id, deletePassword.trim())
+      setShowDeleteConfirm(false)
+      setDeletePassword('')
       logout()
       navigate('/login', { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al eliminar la cuenta.')
+      setDeleteError(err instanceof Error ? err.message : 'Error al eliminar la cuenta.')
     } finally {
       setDeleting(false)
     }
@@ -105,27 +115,42 @@ export function Configuracion() {
               onClick={(e) => e.stopPropagation()}
               className="w-full max-w-sm glass rounded-2xl border border-white/10 overflow-hidden shadow-xl"
             >
-              <div className="p-6 text-center">
+              <div className="p-6">
                 <div className="w-12 h-12 rounded-full bg-rose-500/20 flex items-center justify-center mx-auto mb-4">
                   <AlertTriangle className="w-6 h-6 text-rose-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">¿Eliminar tu cuenta?</h3>
-                <p className="text-white/60 text-sm">
-                  Se borrarán todos tus datos. Esta acción no se puede deshacer.
+                <h3 className="text-lg font-semibold text-white text-center mb-2">¿Eliminar tu cuenta?</h3>
+                <p className="text-white/70 text-sm text-center mb-4">
+                  Se borrarán todos tus datos de la app (perfil, frase semilla cifrada y direcciones guardadas). Si tenés fondos en tus direcciones, solo podés acceder a ellos con tu frase semilla: guardala antes de eliminar. Esta acción no se puede deshacer.
                 </p>
+                <label className="block text-sm font-medium text-white/80 mb-1.5">Contraseña</label>
+                <input
+                  type="password"
+                  value={deletePassword}
+                  onChange={(e) => { setDeletePassword(e.target.value); setDeleteError('') }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleDeleteAccount()}
+                  placeholder="Ingresá tu contraseña para confirmar"
+                  className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-rose-500/50 mb-2"
+                  autoComplete="current-password"
+                  disabled={deleting}
+                />
+                {deleteError && (
+                  <p className="text-rose-400 text-sm mb-3">{deleteError}</p>
+                )}
               </div>
               <div className="flex gap-3 p-4 border-t border-white/10">
                 <button
                   type="button"
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="flex-1 py-3 rounded-xl border border-white/20 text-white/80 font-medium hover:bg-white/5 transition-colors"
+                  disabled={deleting}
+                  className="flex-1 py-3 rounded-xl border border-white/20 text-white/80 font-medium hover:bg-white/5 transition-colors disabled:opacity-50"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
                   onClick={handleDeleteAccount}
-                  disabled={deleting}
+                  disabled={deleting || !deletePassword.trim()}
                   className="flex-1 py-3 rounded-xl bg-rose-500/90 hover:bg-rose-500 text-white font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {deleting ? (
@@ -279,7 +304,7 @@ export function Configuracion() {
             </>
           )}
         </button>
-        <p className="text-center text-white/40 text-xs mt-2">Se borrará tu cuenta y todos los datos asociados.</p>
+        <p className="text-center text-white/40 text-xs mt-2">Se pedirá tu contraseña para confirmar. Se borrarán tu cuenta y todos los datos asociados.</p>
       </div>
     </div>
   )

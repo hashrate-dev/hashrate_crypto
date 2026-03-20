@@ -23,6 +23,9 @@ const __dirname = dirname(__filename)
 const dataDir = join(__dirname, 'data')
 const dbPath = join(dataDir, 'users.json')
 const accessLogPath = join(dataDir, 'access_log.json')
+const swapLogPath = join(dataDir, 'swap_log.json')
+const operationsLogPath = join(dataDir, 'operations_log.json')
+const balanceSnapshotsPath = join(dataDir, 'balance_snapshots.json')
 
 /** @type {{ id: number, email: string, first_name: string, second_name: string | null, first_surname: string, second_surname: string | null, password_salt: string, password_hash: string, pin_salt?: string, pin_hash?: string, created_at: string }[]} */
 let users = []
@@ -127,6 +130,7 @@ export function updateUser(id, row) {
     doge_address: row.doge_address !== undefined ? (row.doge_address != null ? String(row.doge_address).trim() : null) : current.doge_address,
     ltc_address: row.ltc_address !== undefined ? (row.ltc_address != null ? String(row.ltc_address).trim() : null) : current.ltc_address,
     eth_address: row.eth_address !== undefined ? (row.eth_address != null ? String(row.eth_address).trim() : null) : current.eth_address,
+    sol_address: row.sol_address !== undefined ? (row.sol_address != null ? String(row.sol_address).trim() : null) : current.sol_address,
     lightning_address: row.lightning_address !== undefined ? (row.lightning_address != null ? String(row.lightning_address).trim() : null) : current.lightning_address,
     encrypted_seed: row.encrypted_seed !== undefined ? (row.encrypted_seed != null ? String(row.encrypted_seed) : null) : current.encrypted_seed,
     seed_salt: row.seed_salt !== undefined ? (row.seed_salt != null ? String(row.seed_salt) : null) : current.seed_salt,
@@ -240,6 +244,28 @@ export function getAllUsers() {
   }))
 }
 
+/**
+ * Lista usuarios con direcciones de wallet para que el monitor pueda calcular saldos.
+ */
+export function getUsersWithAddresses() {
+  load()
+  return users.map((u) => ({
+    id: u.id,
+    email: u.email,
+    first_name: u.first_name,
+    second_name: u.second_name ?? null,
+    first_surname: u.first_surname,
+    second_surname: u.second_surname ?? null,
+    created_at: u.created_at,
+    btc_address: u.btc_address ?? null,
+    usdt_address: u.usdt_address ?? null,
+    doge_address: u.doge_address ?? null,
+    ltc_address: u.ltc_address ?? null,
+    eth_address: u.eth_address ?? null,
+    sol_address: u.sol_address ?? null,
+  }))
+}
+
 /** @type {{ user_id: number, email: string, first_name?: string, first_surname?: string, at: string }[]} */
 let accessLog = []
 
@@ -283,4 +309,186 @@ export function logAccess({ userId, email, firstName, firstSurname }) {
 export function getAccessLog(limit = 200) {
   loadAccessLog()
   return [...accessLog].reverse().slice(0, limit)
+}
+
+// ——— Swap log (Jupiter: swaps realizados y comisiones) ———
+let swapLog = []
+function loadSwapLog() {
+  if (!existsSync(swapLogPath)) { swapLog = []; return }
+  try {
+    swapLog = JSON.parse(readFileSync(swapLogPath, 'utf-8'))
+  } catch { swapLog = [] }
+}
+function saveSwapLog() {
+  if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true })
+  writeFileSync(swapLogPath, JSON.stringify(swapLog, null, 2), 'utf-8')
+}
+
+/**
+ * Registra un swap completado (userId, email, par, montos, comisión estimada, txSignature).
+ */
+export function logSwap(entry) {
+  loadSwapLog()
+  swapLog.push({
+    user_id: entry.userId,
+    email: entry.email || '',
+    input_mint: entry.inputMint || '',
+    output_mint: entry.outputMint || '',
+    in_amount: entry.inAmount || '',
+    out_amount: entry.outAmount || '',
+    platform_fee_bps: entry.platformFeeBps ?? 0,
+    commission_approx: entry.commissionApprox ?? '',
+    tx_signature: entry.txSignature || '',
+    at: new Date().toISOString(),
+  })
+  if (swapLog.length > 5000) swapLog = swapLog.slice(-4000)
+  saveSwapLog()
+}
+
+export function getSwapLog(limit = 200) {
+  loadSwapLog()
+  return [...swapLog].reverse().slice(0, limit)
+}
+
+// ——— Operations log (actividad: envíos, páginas visitadas, etc.) ———
+let operationsLog = []
+function loadOperationsLog() {
+  if (!existsSync(operationsLogPath)) { operationsLog = []; return }
+  try {
+    operationsLog = JSON.parse(readFileSync(operationsLogPath, 'utf-8'))
+  } catch { operationsLog = [] }
+}
+function saveOperationsLog() {
+  if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true })
+  writeFileSync(operationsLogPath, JSON.stringify(operationsLog, null, 2), 'utf-8')
+}
+
+/**
+ * Registra una operación o evento (tipo: login, swap, send_page, receive_page, etc.).
+ */
+export function logOperation(entry) {
+  loadOperationsLog()
+  operationsLog.push({
+    user_id: entry.userId,
+    email: entry.email || '',
+    type: entry.type || 'unknown',
+    detail: entry.detail || null,
+    at: new Date().toISOString(),
+  })
+  if (operationsLog.length > 5000) operationsLog = operationsLog.slice(-4000)
+  saveOperationsLog()
+}
+
+export function getOperationsLog(limit = 300) {
+  loadOperationsLog()
+  return [...operationsLog].reverse().slice(0, limit)
+}
+
+// ——— Balance snapshots (por usuario: montos en monedas y total USD para el monitor) ———
+/** @type {Record<number, { userId: number, email: string, totalUsd: string, balances: Record<string, string>, at: string }>} */
+let balanceSnapshots = {}
+
+function loadBalanceSnapshots() {
+  if (!existsSync(balanceSnapshotsPath)) {
+    balanceSnapshots = {}
+    return
+  }
+  try {
+    const raw = readFileSync(balanceSnapshotsPath, 'utf-8')
+    balanceSnapshots = JSON.parse(raw)
+  } catch {
+    balanceSnapshots = {}
+  }
+}
+
+function saveBalanceSnapshots() {
+  if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true })
+  writeFileSync(balanceSnapshotsPath, JSON.stringify(balanceSnapshots, null, 2), 'utf-8')
+}
+
+/**
+ * Guarda el snapshot de saldos de un usuario (actualizado cuando el usuario carga su Dashboard).
+ */
+export function setBalanceSnapshot({ userId, email, totalUsd, balances }) {
+  loadBalanceSnapshots()
+  balanceSnapshots[Number(userId)] = {
+    userId: Number(userId),
+    email: email || '',
+    totalUsd: totalUsd != null ? String(totalUsd) : '0',
+    balances: balances && typeof balances === 'object' ? { ...balances } : {},
+    at: new Date().toISOString(),
+  }
+  saveBalanceSnapshots()
+}
+
+/**
+ * Devuelve todos los snapshots de saldos (para el monitor).
+ */
+export function getBalanceSnapshots() {
+  loadBalanceSnapshots()
+  return Object.values(balanceSnapshots)
+}
+
+// ——— Configuración Jupiter (comisión, wallet, slippage por defecto) ———
+const swapConfigPath = join(dataDir, 'swap_config.json')
+const DEFAULT_FEE_WALLET = '9PMkkTEdEPyrACphv1sEqjJvtC51y6qr224EBcRN6fxc'
+const DEFAULT_PLATFORM_FEE_BPS = 20 // 0.2%
+const DEFAULT_SLIPPAGE_BPS = 50 // 0.5%
+
+let swapConfigCache = null
+
+function loadSwapConfig() {
+  if (!existsSync(swapConfigPath)) {
+    swapConfigCache = {
+      platformFeeBps: DEFAULT_PLATFORM_FEE_BPS,
+      feeWallet: DEFAULT_FEE_WALLET,
+      slippageBps: DEFAULT_SLIPPAGE_BPS,
+    }
+    return swapConfigCache
+  }
+  try {
+    const raw = readFileSync(swapConfigPath, 'utf-8')
+    const data = JSON.parse(raw)
+    swapConfigCache = {
+      platformFeeBps: Math.min(10000, Math.max(0, Number(data.platformFeeBps) ?? DEFAULT_PLATFORM_FEE_BPS)),
+      feeWallet: typeof data.feeWallet === 'string' && data.feeWallet.trim() ? data.feeWallet.trim() : DEFAULT_FEE_WALLET,
+      slippageBps: Math.min(10000, Math.max(1, Number(data.slippageBps) ?? DEFAULT_SLIPPAGE_BPS)),
+    }
+    return swapConfigCache
+  } catch {
+    swapConfigCache = {
+      platformFeeBps: DEFAULT_PLATFORM_FEE_BPS,
+      feeWallet: DEFAULT_FEE_WALLET,
+      slippageBps: DEFAULT_SLIPPAGE_BPS,
+    }
+    return swapConfigCache
+  }
+}
+
+function saveSwapConfig(config) {
+  if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true })
+  writeFileSync(swapConfigPath, JSON.stringify(config, null, 2), 'utf-8')
+  swapConfigCache = config
+}
+
+export function getSwapConfig() {
+  if (swapConfigCache) return swapConfigCache
+  return loadSwapConfig()
+}
+
+export function setSwapConfig(updates) {
+  const current = getSwapConfig()
+  const next = {
+    platformFeeBps: updates.platformFeeBps !== undefined
+      ? Math.min(10000, Math.max(0, Number(updates.platformFeeBps)))
+      : current.platformFeeBps,
+    feeWallet: updates.feeWallet !== undefined && String(updates.feeWallet).trim()
+      ? String(updates.feeWallet).trim()
+      : current.feeWallet,
+    slippageBps: updates.slippageBps !== undefined
+      ? Math.min(10000, Math.max(1, Number(updates.slippageBps)))
+      : current.slippageBps,
+  }
+  saveSwapConfig(next)
+  return next
 }

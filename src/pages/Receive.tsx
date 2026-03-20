@@ -12,9 +12,9 @@ import { decryptSeed } from '../lib/seedEncryption'
 import { deriveAddressesFromMnemonic } from '../lib/seedPhrase'
 import { getEncryptedSeed, updateUserWallets, getUserById, createLightningInvoice } from '../api/users'
 
-type Tab = 'btc' | 'lightning' | 'usdt' | 'doge' | 'ltc' | 'eth'
+type Tab = 'btc' | 'lightning' | 'usdt' | 'doge' | 'ltc' | 'eth' | 'sol'
 
-const TABS: Tab[] = ['lightning', 'btc', 'usdt', 'doge', 'ltc', 'eth']
+const TABS: Tab[] = ['lightning', 'btc', 'usdt', 'doge', 'ltc', 'eth', 'sol']
 
 const DEMO_RECEIVE: Record<Tab, { amount: string; label: string }> = {
   lightning: { amount: '0.0005', label: 'Bitcoin (Lightning)' },
@@ -23,6 +23,7 @@ const DEMO_RECEIVE: Record<Tab, { amount: string; label: string }> = {
   doge: { amount: '100', label: 'Dogecoin' },
   ltc: { amount: '0.5', label: 'Litecoin' },
   eth: { amount: '0.01', label: 'Ethereum' },
+  sol: { amount: '0.5', label: 'Solana' },
 }
 
 export function Receive() {
@@ -45,7 +46,7 @@ export function Receive() {
   const [lightningAmountBtc, setLightningAmountBtc] = useState('')
 
   const { user, setUser } = useAuth()
-  const { btcAddress, lightningAddress, usdtAddress, dogeAddress, ltcAddress, ethAddress, hasLinkedWallet } = useWalletAddresses()
+  const { btcAddress, lightningAddress, usdtAddress, dogeAddress, ltcAddress, ethAddress, solAddress, hasLinkedWallet } = useWalletAddresses()
   const didRefetchOnMount = useRef(false)
 
   // En /receive cada QR y dirección deben salir de la base de datos (por cada usuario): cargar usuario del servidor al entrar.
@@ -62,17 +63,18 @@ export function Receive() {
     if (!user?.id || !hasLinkedWallet) return
     const needLtc = tab === 'ltc' && !ltcAddress?.trim()
     const needEth = tab === 'eth' && !ethAddress?.trim()
-    if (!needLtc && !needEth) return
+    const needSol = tab === 'sol' && !solAddress?.trim()
+    if (!needLtc && !needEth && !needSol) return
     getUserById(user.id)
       .then(({ user: u }) => {
-        if ((needLtc && u.ltcAddress?.trim()) || (needEth && (u.ethAddress ?? u.usdtAddress)?.trim())) setUser(u)
+        if ((needLtc && u.ltcAddress?.trim()) || (needEth && (u.ethAddress ?? u.usdtAddress)?.trim()) || (needSol && u.solAddress?.trim())) setUser(u)
       })
       .catch(() => {})
-  }, [tab, user?.id, hasLinkedWallet, ltcAddress, ethAddress, setUser])
+  }, [tab, user?.id, hasLinkedWallet, ltcAddress, ethAddress, solAddress, setUser])
 
   // Dirección y QR: siempre las del usuario cargado desde la base de datos (por cada usuario logueado)
-  const address = tab === 'btc' ? btcAddress : tab === 'lightning' ? lightningAddress : tab === 'doge' ? dogeAddress : tab === 'ltc' ? ltcAddress : tab === 'eth' ? ethAddress : usdtAddress
-  const label = tab === 'btc' ? 'Bitcoin (on-chain)' : tab === 'lightning' ? 'Lightning' : tab === 'doge' ? 'Dogecoin' : tab === 'ltc' ? 'Litecoin' : tab === 'eth' ? 'Ethereum' : 'USDT (ERC-20)'
+  const address = tab === 'btc' ? btcAddress : tab === 'lightning' ? lightningAddress : tab === 'doge' ? dogeAddress : tab === 'ltc' ? ltcAddress : tab === 'eth' ? ethAddress : tab === 'sol' ? solAddress : usdtAddress
+  const label = tab === 'btc' ? 'Bitcoin (on-chain)' : tab === 'lightning' ? 'Lightning' : tab === 'doge' ? 'Dogecoin' : tab === 'ltc' ? 'Litecoin' : tab === 'eth' ? 'Ethereum' : tab === 'sol' ? 'Solana' : 'USDT (ERC-20)'
 
   const copy = (text: string, key: string) => {
     navigator.clipboard.writeText(text)
@@ -115,6 +117,7 @@ export function Receive() {
         dogeAddress: user.dogeAddress ?? derived.dogeAddress,
         ltcAddress: derived.ltcAddress,
         ethAddress: derived.ethAddress,
+        solAddress: derived.solAddress,
         password: passwordValue.trim(),
       })
       setUser(updated)
@@ -240,17 +243,24 @@ export function Receive() {
               )}
             </div>
             {address?.trim() ? (
-              <div className="flex items-center gap-2 justify-center flex-wrap">
-                <code className="font-mono text-sm text-white/80 break-all bg-surface-700 px-3 py-2 rounded-xl max-w-full">
-                  {address}
-                </code>
-                <button
-                  onClick={() => copy(address, tab)}
-                  className="p-2.5 rounded-xl glass text-white/80 hover:text-white hover:bg-white/10 transition-colors shrink-0"
-                  title="Copiar"
-                >
-                  {copied === tab ? <Check className="w-5 h-5 text-emerald-400" /> : <Copy className="w-5 h-5" />}
-                </button>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 justify-center flex-wrap">
+                  <code className="font-mono text-sm text-white/80 break-all bg-surface-700 px-3 py-2 rounded-xl max-w-full">
+                    {address}
+                  </code>
+                  <button
+                    onClick={() => copy(address, tab)}
+                    className="p-2.5 rounded-xl glass text-white/80 hover:text-white hover:bg-white/10 transition-colors shrink-0"
+                    title="Copiar"
+                  >
+                    {copied === tab ? <Check className="w-5 h-5 text-emerald-400" /> : <Copy className="w-5 h-5" />}
+                  </button>
+                </div>
+                {tab === 'sol' && (
+                  <p className="text-white/40 text-xs text-center max-w-sm mx-auto">
+                    Esta dirección se deriva de tu frase semilla (mismo criterio que Trust Wallet). Si no coincide con tu wallet, entrá a Billeteras → Ver frase semilla e ingresá tu contraseña para actualizarla.
+                  </p>
+                )}
               </div>
             ) : hasLinkedWallet ? (
               <div className="flex flex-col items-center gap-2">

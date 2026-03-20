@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { Zap, ChevronRight } from 'lucide-react'
 import { useAssetCharts } from '../hooks/useAssetCharts'
-import { ETH_LOGO_URL } from '../lib/assetLogos'
+import { ETH_LOGO_URL, SOL_LOGO_URL } from '../lib/assetLogos'
 import { Sparkline } from '../components/Sparkline'
 
 /** Una sola entrada para Bitcoin (incluye red base y Lightning); en Mercado se muestra unificado. */
@@ -12,6 +12,7 @@ const ASSETS = [
   { id: 'doge', name: 'Dogecoin', symbol: 'DOGE', variant: 'doge' as const, icon: 'Ð' },
   { id: 'ltc', name: 'Litecoin', symbol: 'LTC', variant: 'ltc' as const, icon: 'Ł' },
   { id: 'eth', name: 'Ethereum', symbol: 'ETH', variant: 'eth' as const, icon: 'Ξ' },
+  { id: 'sol', name: 'Solana', symbol: 'SOL', variant: 'sol' as const, icon: 'SOL' },
 ] as const
 
 export function Mercado() {
@@ -33,7 +34,7 @@ export function Mercado() {
 
       <div className="space-y-2">
         {ASSETS.map((asset, i) => {
-          const price = currentPrices
+          const priceRaw = currentPrices
             ? asset.id === 'usdt'
               ? currentPrices.usdt
               : asset.id === 'doge'
@@ -42,9 +43,14 @@ export function Mercado() {
               ? currentPrices.ltc
               : asset.id === 'eth'
               ? currentPrices.eth
+              : asset.id === 'sol'
+              ? currentPrices.sol
               : currentPrices.btc
             : 0
           const chart = chartData[asset.id] ?? []
+          /** No mostrar $0.0000: usar último del sparkline o placeholder. */
+          const price = priceRaw > 0 ? priceRaw : (chart.length > 0 ? chart[chart.length - 1] : 0)
+          const hasPrice = price > 0
           const variationPercent =
             chart.length >= 2
               ? ((chart[chart.length - 1] - chart[0]) / chart[0]) * 100
@@ -60,6 +66,8 @@ export function Mercado() {
               ? { up: 'rgb(148, 163, 184)', down: 'rgb(239, 68, 68)' }
               : asset.variant === 'eth'
               ? { up: 'rgb(99, 102, 241)', down: 'rgb(239, 68, 68)' }
+              : asset.variant === 'sol'
+              ? { up: 'rgb(0, 255, 163)', down: 'rgb(239, 68, 68)' }
               : { up: 'rgb(34, 197, 94)', down: 'rgb(239, 68, 68)' }
 
           return (
@@ -87,11 +95,15 @@ export function Mercado() {
                       ? 'bg-slate-400/20'
                       : asset.variant === 'eth'
                       ? 'bg-indigo-400/20'
+                      : asset.variant === 'sol'
+                      ? 'bg-emerald-400/20'
                       : 'bg-usdt/20'
                   }`}
                 >
                   {asset.variant === 'eth' ? (
                     <img src={ETH_LOGO_URL} alt="" className="w-8 h-8 object-contain" />
+                  ) : asset.variant === 'sol' ? (
+                    <img src={SOL_LOGO_URL} alt="" className="w-8 h-8 object-contain" />
                   ) : asset.icon ? (
                     <span
                       className={`text-2xl font-bold ${
@@ -130,7 +142,9 @@ export function Mercado() {
                 <div className="flex items-center justify-end gap-2 shrink-0">
                   <div className="text-right">
                     <p className="font-mono font-semibold text-white text-sm">
-                      ${price >= 1 ? price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : price.toFixed(4)}
+                      {hasPrice
+                        ? `$${price >= 1 ? price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : asset.id === 'doge' ? price.toFixed(5) : asset.id === 'sol' ? price.toFixed(4) : price.toFixed(4)}`
+                        : '—'}
                     </p>
                     <p className="text-xs text-white/40 flex items-center justify-end">
                       {variationPercent != null && !Number.isNaN(variationPercent) ? (

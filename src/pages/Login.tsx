@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Mail, LogIn, UserPlus, Lock, Eye, EyeOff } from 'lucide-react'
+import { Mail, LogIn, UserPlus, Lock, Eye } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
@@ -103,7 +103,7 @@ export function Login() {
                 title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
                 tabIndex={-1}
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                <Eye className="w-4 h-4 text-white/50" />
               </button>
             </div>
           </div>

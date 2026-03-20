@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 
-export type ThemeId = 'original' | 'ocean' | 'forest' | 'ember'
+export type ThemeId = 'original' | 'ocean' | 'forest' | 'ember' | 'light'
 
 const STORAGE_KEY = 'volt_theme'
 
@@ -14,7 +14,7 @@ const ThemeContext = createContext<ThemeContextValue | null>(null)
 function getStoredTheme(): ThemeId {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw === 'ocean' || raw === 'forest' || raw === 'ember' || raw === 'original') return raw
+    if (raw === 'ocean' || raw === 'forest' || raw === 'ember' || raw === 'original' || raw === 'light') return raw
   } catch {
     // ignore
   }

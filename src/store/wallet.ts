@@ -1,4 +1,4 @@
-export type AssetType = 'btc' | 'btc_lightning' | 'usdt' | 'doge' | 'ltc' | 'eth';
+export type AssetType = 'btc' | 'btc_lightning' | 'usdt' | 'doge' | 'ltc' | 'eth' | 'sol';
 
 export interface Balance {
   asset: AssetType;
@@ -28,6 +28,7 @@ export interface WalletState {
   dogeAddress: string;
   ltcAddress: string;
   ethAddress: string;
+  solAddress: string;
 }
 
 const DEMO_BTC = '0.054291';
@@ -43,6 +44,7 @@ export const initialWalletState: WalletState = {
     { asset: 'doge', amount: '0', amountUsd: '0' },
     { asset: 'ltc', amount: '0', amountUsd: '0' },
     { asset: 'eth', amount: '0', amountUsd: '0' },
+    { asset: 'sol', amount: '0', amountUsd: '0' },
   ],
   transactions: [
     { id: '1', type: 'receive', asset: 'btc_lightning', amount: '0.000500', amountUsd: '30.00', counterparty: 'alice@getalby.com', timestamp: Date.now() - 3600000, status: 'completed', isLightning: true },
@@ -55,6 +57,7 @@ export const initialWalletState: WalletState = {
   dogeAddress: '',
   ltcAddress: '',
   ethAddress: '',
+  solAddress: '',
 };
 
 export function getTotalUsd(balances: Balance[]): string {
@@ -65,7 +68,20 @@ export function getTotalUsd(balances: Balance[]): string {
 export function formatBalance(amount: string, asset: AssetType): string {
   if (asset === 'usdt') return parseFloat(amount).toFixed(2);
   if (asset === 'eth') return parseFloat(amount).toFixed(6);
+  if (asset === 'sol') return parseFloat(amount).toFixed(4);
   return parseFloat(amount).toFixed(8);
+}
+
+/** Formato de monto para historial (misma precisión que Orb: AMOUNT con decimales completos). */
+export function formatAmountHistory(amount: string, asset: AssetType): string {
+  const n = parseFloat(amount)
+  if (Number.isNaN(n)) return '0'
+  if (asset === 'usdt') return n.toFixed(2)
+  if (asset === 'eth') return n.toFixed(8)
+  /** SOL: hasta 9 decimales y quitar ceros finales (ej. 0.00000001, 3.67314073, 0.183815, 1.574419572). */
+  if (asset === 'sol') return (Number.isFinite(n) ? n : 0).toFixed(9).replace(/\.?0+$/, '') || '0'
+  if (asset === 'doge' || asset === 'ltc') return n.toFixed(8)
+  return n.toFixed(8)
 }
 
 export function getAssetLabel(asset: AssetType): string {
@@ -76,6 +92,7 @@ export function getAssetLabel(asset: AssetType): string {
     case 'doge': return 'Dogecoin';
     case 'ltc': return 'Litecoin';
     case 'eth': return 'Ethereum';
+    case 'sol': return 'Solana';
     default: return asset;
   }
 }
@@ -89,6 +106,7 @@ export function getAssetPrimaryName(asset: AssetType): string {
     case 'doge': return 'Dogecoin';
     case 'ltc': return 'Litecoin';
     case 'eth': return 'Ethereum';
+    case 'sol': return 'Solana';
     default: return getAssetLabel(asset);
   }
 }
@@ -102,6 +120,7 @@ export function getAssetSecondaryName(asset: AssetType): string {
     case 'doge': return 'DOGE';
     case 'ltc': return 'LTC';
     case 'eth': return 'ETH';
+    case 'sol': return 'SOL';
     default: return getAssetSymbol(asset);
   }
 }
@@ -114,6 +133,7 @@ export function getAssetSymbol(asset: AssetType): string {
     case 'doge': return 'DOGE';
     case 'ltc': return 'LTC';
     case 'eth': return 'ETH';
+    case 'sol': return 'SOL';
     default: return '';
   }
 }
@@ -126,4 +146,5 @@ export const assetChartData: Record<AssetType, number[]> = {
   doge: [0.08, 0.082, 0.081, 0.083, 0.082, 0.084, 0.083, 0.085, 0.084, 0.086, 0.085, 0.087, 0.086, 0.088, 0.087, 0.089, 0.09, 0.089, 0.091, 0.09, 0.092, 0.091, 0.093, 0.092, 0.094, 0.093, 0.095, 0.094],
   ltc: [82, 84, 83, 85, 84, 86, 85, 87, 86, 88, 87, 89, 90, 89, 91, 90, 92, 91, 93, 92, 94, 93, 95, 94, 96, 95, 97, 96],
   eth: [3450, 3520, 3480, 3550, 3580, 3620, 3600, 3650, 3680, 3720, 3700, 3750, 3780, 3820, 3800, 3850, 3880, 3920, 3900, 3950, 3980, 4020, 4000, 4050, 4080, 4120, 4100, 4150],
+  sol: [148, 152, 150, 155, 153, 157, 156, 159, 158, 161, 160, 163, 162, 165, 164, 167, 166, 169, 168, 171, 170, 173, 172, 175, 174, 177, 176, 179],
 };

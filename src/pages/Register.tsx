@@ -1,12 +1,20 @@
 import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { ArrowLeft, UserPlus, Mail, User, Lock, Eye, EyeOff } from 'lucide-react'
-import { Link } from 'react-router-dom'
-import { registerUser, isPasswordValid } from '../api/users'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ArrowLeft, UserPlus, Mail, User, Lock, Eye, FileInput, KeyRound } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { registerUser, isPasswordValid, updateUserWallets } from '../api/users'
 import { useAuth } from '../context/AuthContext'
+import { deriveAddressesFromMnemonic, generateSeedPhraseAndWallets, isValidMnemonic } from '../lib/seedPhrase'
+import { encryptSeed } from '../lib/seedEncryption'
+
+type RegisterStep = 'choice' | 'form' | 'seed'
+type RegisterMode = 'import' | 'new'
 
 export function Register() {
   const { setUser } = useAuth()
+  const navigate = useNavigate()
+  const [step, setStep] = useState<RegisterStep>('choice')
+  const [registerMode, setRegisterMode] = useState<RegisterMode | null>(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -18,34 +26,63 @@ export function Register() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [registeredUser, setRegisteredUser] = useState<{ id: number; email: string } | null>(null)
+  const [importWords, setImportWords] = useState<string[]>(() => Array(12).fill(''))
+
+  const wantImportSeed = registerMode === 'import'
+
+  const validateForm = () => {
+    setError('')
+    if (!email.trim()) {
+      setError('El email es obligatorio.')
+      return false
+    }
+    if (!password) {
+      setError('La contraseña es obligatoria.')
+      return false
+    }
+    if (!isPasswordValid(password)) {
+      setError('La contraseña debe tener mínimo 6 caracteres, letras o números y al menos una mayúscula.')
+      return false
+    }
+    if (password !== confirmPassword) {
+      setError('Las contraseñas no coinciden.')
+      return false
+    }
+    if (!firstName.trim()) {
+      setError('El primer nombre es obligatorio.')
+      return false
+    }
+    if (!firstSurname.trim()) {
+      setError('El primer apellido es obligatorio.')
+      return false
+    }
+    return true
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    if (!email.trim()) {
-      setError('El email es obligatorio.')
-      return
-    }
-    if (!password) {
-      setError('La contraseña es obligatoria.')
-      return
-    }
-    if (!isPasswordValid(password)) {
-      setError('La contraseña debe tener mínimo 6 caracteres, letras o números y al menos una mayúscula.')
-      return
-    }
-    if (password !== confirmPassword) {
-      setError('Las contraseñas no coinciden.')
-      return
-    }
-    if (!firstName.trim()) {
-      setError('El primer nombre es obligatorio.')
-      return
-    }
-    if (!firstSurname.trim()) {
-      setError('El primer apellido es obligatorio.')
-      return
+    if (step === 'seed') {
+      const phrase = importWords.map((w) => w.trim()).join(' ').trim()
+      if (!phrase) {
+        setError('Ingresá las 12 palabras de tu frase semilla.')
+        return
+      }
+      const words = phrase.split(/\s+/).filter(Boolean)
+      if (words.length !== 12) {
+        setError('La frase debe tener exactamente 12 palabras.')
+        return
+      }
+      if (!isValidMnemonic(phrase)) {
+        setError('Frase semilla inválida. Revisá que las 12 palabras sean correctas y estén en el orden de tu backup.')
+        return
+      }
+    } else {
+      if (!validateForm()) return
+      if (wantImportSeed) {
+        setStep('seed')
+        return
+      }
     }
     setLoading(true)
     try {
@@ -58,7 +95,52 @@ export function Register() {
         secondSurname: secondSurname.trim() || undefined,
       })
       setUser(user)
-      setRegisteredUser({ id: user.id, email: user.email })
+      if (wantImportSeed) {
+        const phrase = importWords.map((w) => w.trim()).join(' ').trim()
+        try {
+          const derived = deriveAddressesFromMnemonic(phrase)
+          const { salt, encrypted } = await encryptSeed(phrase, password)
+          const { user: updated } = await updateUserWallets(user.id, {
+            btcAddress: derived.btcAddress,
+            usdtAddress: derived.ethAddress,
+            dogeAddress: derived.dogeAddress,
+            ltcAddress: derived.ltcAddress,
+            ethAddress: derived.ethAddress,
+            solAddress: derived.solAddress,
+            encryptedSeed: encrypted,
+            seedSalt: salt,
+            password,
+          })
+          setUser(updated)
+        } catch (seedErr) {
+          setError(seedErr instanceof Error ? seedErr.message : 'Error al vincular la frase semilla.')
+          setLoading(false)
+          return
+        }
+        navigate('/', { replace: true })
+      } else {
+        // Nueva frase: generar, derivar todas las direcciones (BTC, USDT, DOGE, LTC, ETH, SOL) y vincular a la cuenta
+        try {
+          const derived = generateSeedPhraseAndWallets()
+          const { salt, encrypted } = await encryptSeed(derived.mnemonic, password)
+          const { user: updated } = await updateUserWallets(user.id, {
+            btcAddress: derived.btcAddress,
+            usdtAddress: derived.ethAddress,
+            dogeAddress: derived.dogeAddress,
+            ltcAddress: derived.ltcAddress,
+            ethAddress: derived.ethAddress,
+            solAddress: derived.solAddress,
+            encryptedSeed: encrypted,
+            seedSalt: salt,
+          })
+          setUser(updated)
+          navigate('/seed-phrase', { replace: true, state: { fromRegister: true, mnemonic: derived.mnemonic } })
+        } catch (seedErr) {
+          setError(seedErr instanceof Error ? seedErr.message : 'Error al configurar la frase semilla.')
+          setLoading(false)
+          return
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al registrar.')
     } finally {
@@ -66,66 +148,143 @@ export function Register() {
     }
   }
 
-  if (registeredUser) {
-    return (
-      <div className="min-h-screen flex flex-col relative">
-        <div className="bg-animated-exodus absolute inset-0 z-0" aria-hidden />
-        <div className="relative z-10 max-w-lg mx-auto w-full px-4 pt-6 pb-8">
-          <div className="flex items-center gap-3 mb-6">
-            <Link to="/" className="p-2 -ml-2 rounded-xl hover:bg-white/5 transition-colors">
-              <ArrowLeft className="w-5 h-5 text-white/80" />
-            </Link>
-            <h1 className="text-xl font-bold text-white">Registro</h1>
-          </div>
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass rounded-2xl border border-white/5 p-6 text-center"
-          >
-            <div className="w-14 h-14 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-4">
-              <UserPlus className="w-7 h-7 text-emerald-400" />
-            </div>
-            <p className="text-lg font-semibold text-white mb-1">Usuario registrado</p>
-            <p className="text-white/60 text-sm mb-6">Tu cuenta ha sido creada correctamente.</p>
-            <div className="bg-white/5 rounded-xl p-4 text-left space-y-2">
-              <p className="flex justify-between items-center">
-                <span className="text-white/50 text-sm">ID NUMBER</span>
-                <span className="font-mono font-bold text-white text-lg">{registeredUser.id}</span>
-              </p>
-              <p className="flex justify-between items-center">
-                <span className="text-white/50 text-sm">Email</span>
-                <span className="font-medium text-white truncate ml-2">{registeredUser.email}</span>
-              </p>
-            </div>
-            <Link
-              to="/"
-              className="mt-6 inline-block w-full py-3 rounded-xl bg-exodus/90 hover:bg-exodus text-white font-medium text-center transition-colors"
-            >
-              Ir al portfolio
-            </Link>
-          </motion.div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen flex flex-col relative">
       <div className="bg-animated-exodus absolute inset-0 z-0" aria-hidden />
       <div className="relative z-10 max-w-lg mx-auto w-full px-4 pt-6 pb-8">
         <div className="flex items-center gap-3 mb-6">
-          <Link to="/login" className="p-2 -ml-2 rounded-xl hover:bg-white/5 transition-colors">
-            <ArrowLeft className="w-5 h-5 text-white/80" />
-          </Link>
-          <h1 className="text-xl font-bold text-white">Registrarse</h1>
+          {step === 'form' ? (
+            <button
+              type="button"
+              onClick={() => { setStep('choice'); setRegisterMode(null); setError(''); }}
+              className="p-2 -ml-2 rounded-xl hover:bg-white/5 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 text-white/80" />
+            </button>
+          ) : step === 'seed' ? (
+            <button
+              type="button"
+              onClick={() => { setStep('form'); setError(''); }}
+              className="p-2 -ml-2 rounded-xl hover:bg-white/5 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 text-white/80" />
+            </button>
+          ) : (
+            <Link to="/login" className="p-2 -ml-2 rounded-xl hover:bg-white/5 transition-colors">
+              <ArrowLeft className="w-5 h-5 text-white/80" />
+            </Link>
+          )}
+          <h1 className="text-xl font-bold text-white">
+            {step === 'seed' ? 'Frase semilla' : 'Registrarse'}
+          </h1>
         </div>
 
-        <motion.form
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          onSubmit={handleSubmit}
-          className="glass rounded-2xl border border-white/5 p-5 space-y-4 w-full"
-        >
+        <AnimatePresence mode="wait">
+          {step === 'choice' ? (
+            <motion.div
+              key="choice"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="space-y-6"
+            >
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex gap-3">
+                <KeyRound className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-white/70 text-sm">
+                  Todas las monedas (Bitcoin, Ethereum, USDT, Dogecoin, Litecoin, Solana) quedarán conectadas a la misma frase semilla. Elegí si usás una frase existente o si generamos una nueva para tu cuenta.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setRegisterMode('import'); setStep('form'); setError(''); }}
+                className="w-full py-4 rounded-2xl font-medium flex items-center justify-center gap-2 transition-colors border border-amber-500/60 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+              >
+                <FileInput className="w-5 h-5" />
+                Registrarme con una frase semilla existente
+              </button>
+              <button
+                type="button"
+                onClick={() => { setRegisterMode('new'); setStep('form'); setError(''); }}
+                className="w-full py-4 rounded-2xl font-medium flex items-center justify-center gap-2 transition-colors border border-exodus/60 bg-exodus/10 text-exodus hover:bg-exodus/20"
+              >
+                <KeyRound className="w-5 h-5" />
+                Registrarme con una nueva frase semilla
+              </button>
+            </motion.div>
+          ) : step === 'seed' ? (
+            <motion.form
+              key="seed"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              onSubmit={handleSubmit}
+              className="glass rounded-2xl border border-white/5 p-5 space-y-4 w-full"
+            >
+              {error && (
+                <div className="rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-sm px-4 py-3">
+                  {error}
+                </div>
+              )}
+              <p className="text-white/70 text-sm">
+                Ingresá las 12 palabras de tu frase semilla. Se vincularán a tu nueva cuenta y se derivarán las direcciones de todas las monedas (Bitcoin, Ethereum, USDT, Dogecoin, Litecoin, Solana) desde esta frase.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {importWords.map((word, i) => (
+                  <input
+                    key={i}
+                    type="text"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    placeholder={`${i + 1}`}
+                    value={word}
+                    onChange={(e) => {
+                      const next = [...importWords]
+                      next[i] = e.target.value.toLowerCase().trim()
+                      setImportWords(next)
+                      setError('')
+                    }}
+                    onPaste={(e) => {
+                      if (i !== 0) return
+                      e.preventDefault()
+                      const pasted = e.clipboardData.getData('text').toLowerCase().trim().split(/\s+/).filter(Boolean)
+                      if (pasted.length >= 12) {
+                        setImportWords(pasted.slice(0, 12))
+                        setError('')
+                      }
+                    }}
+                    className="px-3 py-2.5 rounded-xl bg-white/10 border border-white/10 text-white placeholder-white/30 text-sm font-mono focus:border-exodus focus:outline-none focus:ring-1 focus:ring-exodus/50"
+                    disabled={loading}
+                  />
+                ))}
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3.5 rounded-xl bg-exodus hover:bg-exodus/90 text-white font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Registrando...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-5 h-5" />
+                    Crear cuenta
+                  </>
+                )}
+              </button>
+            </motion.form>
+          ) : (
+            <motion.form
+              key="form"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              onSubmit={handleSubmit}
+              className="glass rounded-2xl border border-white/5 p-5 space-y-4 w-full"
+            >
         {error && (
           <div className="rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-sm px-4 py-3">
             {error}
@@ -164,11 +323,11 @@ export function Register() {
             <button
               type="button"
               onClick={() => setShowPassword((v) => !v)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-white/50 hover:text-white/80 hover:bg-white/5 transition-colors"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-white/50 hover:text-white/70 hover:bg-white/5 transition-colors"
               title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
               tabIndex={-1}
             >
-              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              <Eye className="w-4 h-4 text-white/50" />
             </button>
           </div>
           <p className="text-xs text-white/40 mt-1">Mínimo 6 caracteres, letras o números y al menos una mayúscula.</p>
@@ -190,11 +349,11 @@ export function Register() {
             <button
               type="button"
               onClick={() => setShowConfirmPassword((v) => !v)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-white/50 hover:text-white/80 hover:bg-white/5 transition-colors"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-white/50 hover:text-white/70 hover:bg-white/5 transition-colors"
               title={showConfirmPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
               tabIndex={-1}
             >
-              {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              <Eye className="w-4 h-4 text-white/50" />
             </button>
           </div>
         </div>
@@ -259,24 +418,37 @@ export function Register() {
           </div>
         </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full py-3.5 rounded-xl bg-exodus hover:bg-exodus/90 text-white font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          {loading ? (
-            <>
-              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Registrando...
-            </>
-          ) : (
-            <>
-              <UserPlus className="w-5 h-5" />
-              Crear cuenta
-            </>
+        {!wantImportSeed && (
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 rounded-xl bg-exodus hover:bg-exodus/90 text-white font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Registrando...
+                </>
+              ) : (
+                <>
+                  <UserPlus className="w-5 h-5" />
+                  Crear cuenta
+                </>
+              )}
+            </button>
           )}
-        </button>
-      </motion.form>
+          {wantImportSeed && (
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 rounded-xl border border-exodus/60 bg-exodus/10 text-exodus font-semibold hover:bg-exodus/20 transition-colors flex items-center justify-center gap-2"
+            >
+              Siguiente
+            </button>
+          )}
+            </motion.form>
+          )}
+        </AnimatePresence>
 
         <p className="text-center text-white/40 text-xs mt-5">
           Al registrarte se te asignará un ID NUMBER vinculado a tus datos.

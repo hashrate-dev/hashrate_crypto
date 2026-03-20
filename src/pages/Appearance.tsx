@@ -19,14 +19,20 @@ const themes: { id: ThemeId; name: string; desc: string; preview: string[] }[] =
   {
     id: 'forest',
     name: 'Forest',
-    desc: 'Verde esmeralda, natural',
-    preview: ['#0a1a0f', '#34d399', '#10b981', '#0d2b0d'],
+    desc: 'Modo noche, verde suave para descanso de vista',
+    preview: ['#051008', '#0f2e1f', '#166534', '#14532d'],
   },
   {
     id: 'ember',
-    name: 'Ember',
-    desc: 'Ámbar y coral, cálido',
-    preview: ['#1a0f0a', '#f59e0b', '#ea580c', '#2a1f18'],
+    name: 'Noir',
+    desc: 'Negro y gris, sobrio',
+    preview: ['#0a0a0a', '#27272a', '#a1a1aa', '#18181b'],
+  },
+  {
+    id: 'light',
+    name: 'Claro',
+    desc: 'Fondo blanco, claro y legible',
+    preview: ['#f8fafc', '#e2e8f0', '#0ea5e9', '#f1f5f9'],
   },
 ]
 

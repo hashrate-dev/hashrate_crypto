@@ -29,6 +29,7 @@ export interface User {
   dogeAddress?: string | null
   ltcAddress?: string | null
   ethAddress?: string | null
+  solAddress?: string | null
   lightningAddress?: string | null
   totpEnabled?: boolean
 }
@@ -141,6 +142,21 @@ export async function deleteUser(id: number): Promise<{ message: string }> {
   return json as { message: string }
 }
 
+/** Elimina la cuenta del usuario. Requiere contraseña para mayor seguridad. */
+export async function deleteUserWithPassword(
+  id: number,
+  password: string
+): Promise<{ message: string }> {
+  const res = await fetch(`${API_BASE}/api/users/${id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: password.trim() }),
+  })
+  const json = await parseJsonResponse(res)
+  if (!res.ok) throw new Error((json?.error as string) ?? 'Error al eliminar la cuenta')
+  return json as { message: string }
+}
+
 export interface ChangePasswordPayload {
   currentPassword?: string
   pin?: string
@@ -185,6 +201,7 @@ export interface UpdateWalletsPayload {
   dogeAddress?: string
   ltcAddress?: string
   ethAddress?: string
+  solAddress?: string
   encryptedSeed?: string
   seedSalt?: string
   password?: string

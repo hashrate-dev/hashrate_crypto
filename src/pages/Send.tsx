@@ -8,12 +8,13 @@ import { useUsdtBalance } from '../hooks/useUsdtBalance'
 import { useDogeBalance } from '../hooks/useDogeBalance'
 import { useLtcBalance } from '../hooks/useLtcBalance'
 import { useEthBalance } from '../hooks/useEthBalance'
+import { useSolBalance } from '../hooks/useSolBalance'
 import { useWalletAddresses } from '../hooks/useWalletAddresses'
 import { getNotifyOnSend } from '../store/notifications'
 import { useAuth } from '../context/AuthContext'
 import { playSendSound } from '../lib/sounds'
 import { verifyTotp } from '../api/users'
-import { ETH_LOGO_URL } from '../lib/assetLogos'
+import { ETH_LOGO_URL, SOL_LOGO_URL } from '../lib/assetLogos'
 
 type Step = 'asset' | 'amount' | 'address' | 'confirm'
 
@@ -24,10 +25,11 @@ const ASSET_OPTIONS: { id: AssetType; label: string; sub: string; icon: string; 
   { id: 'doge', label: 'Dogecoin', sub: 'Red Dogecoin', icon: 'Ð', iconClass: 'text-amber-300', iconBg: 'bg-amber-200/20' },
   { id: 'ltc', label: 'Litecoin', sub: 'Red Litecoin', icon: 'Ł', iconClass: 'text-slate-300', iconBg: 'bg-slate-400/20' },
   { id: 'eth', label: 'Ethereum', sub: 'Red Ethereum', icon: 'Ξ', iconClass: 'text-indigo-400', iconBg: 'bg-indigo-400/20' },
+  { id: 'sol', label: 'Solana', sub: 'Red Solana', icon: 'SOL', iconClass: 'text-emerald-400', iconBg: 'bg-emerald-400/20' },
   { id: 'btc_lightning', label: 'Lightning', sub: 'Instantáneo, bajas comisiones', icon: '₿', iconClass: 'text-btc', iconBg: 'bg-lightning/20', disabled: true },
 ]
 
-const VALID_ASSETS: AssetType[] = ['btc', 'btc_lightning', 'usdt', 'doge', 'ltc', 'eth']
+const VALID_ASSETS: AssetType[] = ['btc', 'btc_lightning', 'usdt', 'doge', 'ltc', 'eth', 'sol']
 
 export function Send() {
   const { user } = useAuth()
@@ -49,12 +51,13 @@ export function Send() {
   const [totpLoading, setTotpLoading] = useState(false)
 
   const { balances: baseBalances } = initialWalletState
-  const { btcAddress, usdtAddress, dogeAddress, ltcAddress, ethAddress, hasLinkedWallet } = useWalletAddresses()
+  const { btcAddress, usdtAddress, dogeAddress, ltcAddress, ethAddress, solAddress, hasLinkedWallet } = useWalletAddresses()
   const { balanceBtc: mempoolBtc } = useMempoolBtc(btcAddress)
   const { balanceUsdt: usdtBalance } = useUsdtBalance(usdtAddress)
   const { balanceDoge: dogeBalance } = useDogeBalance(dogeAddress)
   const { balanceLtc: ltcBalance } = useLtcBalance(ltcAddress)
   const { balanceEth: ethBalance } = useEthBalance(ethAddress)
+  const { balanceSol: solBalance } = useSolBalance(solAddress)
   const balances = useMemo((): Balance[] => {
     return baseBalances.map((b) => {
       if (b.asset === 'btc') return { ...b, amount: mempoolBtc ?? '0' }
@@ -62,10 +65,11 @@ export function Send() {
       if (b.asset === 'doge') return { ...b, amount: dogeBalance ?? '0' }
       if (b.asset === 'ltc') return { ...b, amount: ltcBalance ?? '0' }
       if (b.asset === 'eth') return { ...b, amount: ethBalance ?? '0' }
+      if (b.asset === 'sol') return { ...b, amount: solBalance ?? '0' }
       if (b.asset === 'btc_lightning') return { ...b, amount: hasLinkedWallet ? b.amount : '0' }
       return b
     })
-  }, [baseBalances, mempoolBtc, usdtBalance, dogeBalance, ltcBalance, ethBalance, hasLinkedWallet])
+  }, [baseBalances, mempoolBtc, usdtBalance, dogeBalance, ltcBalance, ethBalance, solBalance, hasLinkedWallet])
   const balanceForAsset = asset ? balances.find(b => b.asset === asset) : null
 
   const isLightning = asset === 'btc_lightning'
@@ -83,6 +87,8 @@ export function Send() {
     ? 'D...'
     : asset === 'ltc'
     ? 'ltc1...'
+    : asset === 'sol'
+    ? 'Base58...'
     : 'bc1q...'
 
   const validateAddress = () => {
@@ -119,6 +125,14 @@ export function Send() {
     if (asset === 'eth' && !address.startsWith('0x')) {
       setError('Dirección Ethereum debe empezar por 0x.')
       return false
+    }
+    if (asset === 'sol') {
+      if (address.length < 32 || address.length > 44) {
+        setError('Dirección Solana no válida (longitud base58 típica 32-44 caracteres).')
+        return false
+      }
+      setError('')
+      return true
     }
     setError('')
     return true
@@ -214,6 +228,8 @@ export function Send() {
                     <div className={`w-14 h-14 rounded-xl flex items-center justify-center shrink-0 border border-white/10 ${opt.iconBg}`}>
                       {opt.id === 'eth' ? (
                         <img src={ETH_LOGO_URL} alt="" className="w-8 h-8 object-contain" />
+                      ) : opt.id === 'sol' ? (
+                        <img src={SOL_LOGO_URL} alt="" className="w-8 h-8 object-contain" />
                       ) : (
                         <span className={`text-2xl font-bold ${opt.iconClass}`}>{opt.icon}</span>
                       )}

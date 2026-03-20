@@ -22,6 +22,7 @@ import { Configuracion } from './pages/Configuracion'
 import { SeedPhraseGenerator } from './pages/SeedPhraseGenerator'
 import { LightningAddress } from './pages/LightningAddress'
 import { Billeteras } from './pages/Billeteras'
+import { Swap } from './pages/Swap'
 import { MonitorDashboard } from './pages/MonitorDashboard'
 import { NotificationProvider } from './context/NotificationContext'
 
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="mercado" element={<Mercado />} />
           <Route path="mercado/:assetId" element={<MercadoAsset />} />
           <Route path="send" element={<Send />} />
+          <Route path="swap" element={<Swap />} />
           <Route path="receive" element={<ReceiveSelect />} />
           <Route path="receive/:asset" element={<Receive />} />
           <Route path="history" element={<History />} />

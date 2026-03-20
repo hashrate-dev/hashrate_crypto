@@ -2,14 +2,14 @@ import { motion } from 'framer-motion'
 import { ChevronRight } from 'lucide-react'
 import type { AssetType } from '../store/wallet'
 import { getAssetSymbol, getAssetPrimaryName, getAssetSecondaryName } from '../store/wallet'
-import { ETH_LOGO_URL } from '../lib/assetLogos'
+import { ETH_LOGO_URL, SOL_LOGO_URL } from '../lib/assetLogos'
 import { Sparkline } from './Sparkline'
 
 interface AssetRowProps {
   asset: AssetType
   amount: string
   amountUsd?: string
-  variant?: 'btc' | 'lightning' | 'usdt' | 'doge' | 'ltc' | 'eth'
+  variant?: 'btc' | 'lightning' | 'usdt' | 'doge' | 'ltc' | 'eth' | 'sol'
   /** Datos de precio para el gráfico (sparkline) */
   chartData?: number[]
   /** Precio actual de la moneda (1 unidad en USD) */
@@ -26,6 +26,7 @@ const iconBg = {
   doge: 'bg-amber-200/20',
   ltc: 'bg-slate-400/20',
   eth: 'bg-indigo-400/20',
+  sol: 'bg-emerald-400/20',
 }
 
 const iconColor = {
@@ -35,6 +36,7 @@ const iconColor = {
   doge: 'text-amber-300',
   ltc: 'text-slate-300',
   eth: 'text-indigo-400',
+  sol: 'text-emerald-400',
 }
 
 const sparklineColors = {
@@ -44,6 +46,7 @@ const sparklineColors = {
   doge: { up: 'rgb(198, 166, 100)', down: 'rgb(239, 68, 68)' },
   ltc: { up: 'rgb(148, 163, 184)', down: 'rgb(239, 68, 68)' },
   eth: { up: 'rgb(99, 102, 241)', down: 'rgb(239, 68, 68)' },
+  sol: { up: 'rgb(0, 255, 163)', down: 'rgb(239, 68, 68)' },
 }
 
 export function AssetRow({
@@ -58,7 +61,9 @@ export function AssetRow({
 }: AssetRowProps) {
   const isCryptoLong = asset === 'btc' || asset === 'btc_lightning' || asset === 'doge' || asset === 'ltc'
   const isEth = asset === 'eth'
-  const displayAmount = isEth ? parseFloat(amount).toFixed(6) : isCryptoLong ? parseFloat(amount).toFixed(8) : parseFloat(amount).toFixed(2)
+  const isSol = asset === 'sol'
+  const decimals = asset === 'doge' ? 2 : isEth ? 6 : isSol ? 4 : isCryptoLong ? 8 : 2
+  const displayAmount = parseFloat(amount).toFixed(decimals)
   const colors = sparklineColors[variant] ?? sparklineColors.btc
 
   const variationPercent =
@@ -80,6 +85,8 @@ export function AssetRow({
         <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${iconBg[variant]}`}>
           {variant === 'eth' ? (
             <img src={ETH_LOGO_URL} alt="" className="w-8 h-8 object-contain" />
+          ) : variant === 'sol' ? (
+            <img src={SOL_LOGO_URL} alt="" className="w-8 h-8 object-contain" />
           ) : asset === 'btc_lightning' ? (
             <span className={`text-3xl font-bold ${iconColor.btc}`}>₿</span>
           ) : (
@@ -95,7 +102,7 @@ export function AssetRow({
             <p className="text-xs text-white/40 mt-0.5 font-mono tabular-nums">
               ${currentPrice >= 1
                 ? currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                : currentPrice.toFixed(4)}
+                : asset === 'doge' ? currentPrice.toFixed(5) : currentPrice.toFixed(4)}
             </p>
           )}
         </div>
@@ -112,8 +119,8 @@ export function AssetRow({
         </div>
       )}
       <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
-        <div className="text-right min-w-[60px]">
-          <p className="font-mono text-sm text-white/90">
+        <div className="text-right min-w-0 flex flex-col items-end">
+          <p className="font-mono text-sm text-white/90 whitespace-nowrap">
             {displayAmount} {getAssetSymbol(asset)}
           </p>
           {amountUsd && (

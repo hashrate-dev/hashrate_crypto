@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import { ArrowLeft, ArrowDownToLine } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { ETH_LOGO_URL } from '../lib/assetLogos'
+import { ETH_LOGO_URL, SOL_LOGO_URL } from '../lib/assetLogos'
 
 /** Mismos fondos de ícono que en Activos (AssetRow). */
 const ASSETS = [
@@ -10,6 +10,7 @@ const ASSETS = [
   { id: 'doge', name: 'Dogecoin', sub: 'DOGE', icon: 'Ð', iconClass: 'text-amber-300', iconBg: 'bg-amber-200/20', disabled: false },
   { id: 'ltc', name: 'Litecoin', sub: 'LTC', icon: 'Ł', iconClass: 'text-slate-300', iconBg: 'bg-slate-400/20', disabled: false },
   { id: 'eth', name: 'Ethereum', sub: 'ETH nativo', icon: null, iconClass: '', iconBg: 'bg-indigo-400/20', logoUrl: ETH_LOGO_URL, disabled: false },
+  { id: 'sol', name: 'Solana', sub: 'SOL', icon: null, iconClass: '', iconBg: 'bg-emerald-400/20', logoUrl: SOL_LOGO_URL, disabled: false },
   { id: 'lightning', name: 'Bitcoin (Lightning)', sub: 'Factura con monto, instantáneo', icon: '₿', iconClass: 'text-btc', iconBg: 'bg-lightning/20', disabled: true },
 ]
 

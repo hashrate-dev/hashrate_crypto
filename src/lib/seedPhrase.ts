@@ -1,17 +1,29 @@
 /**
- * Generación de frase semilla (BIP39) y derivación de direcciones (Bitcoin, Litecoin, Dogecoin, Ethereum).
- * La dirección Litecoin (formato ltc1...) se deriva siempre de la frase semilla (BIP84, path m/84'/2'/0'/0/0).
- * Solo para uso en cliente; no persiste la frase ni las claves.
+ * Generación de frase semilla (BIP39) y derivación de direcciones (Bitcoin, Litecoin, Dogecoin, Ethereum, Solana).
+ * Solana: micro-ed25519-hdkey + path m/44'/501'/0'/0' (cookbook oficial / Phantom al importar frase).
+ * Mnemónico normalizado NFKD (estándar BIP39). Solo para uso en cliente; no persiste la frase ni las claves.
  */
 
 import * as bip39 from 'bip39'
 import { HDKey } from '@scure/bip32'
 import * as bitcoin from 'bitcoinjs-lib'
 import { Wallet } from 'ethers'
+import { Keypair } from '@solana/web3.js'
+import { HDKey as SolanaHDKey } from 'micro-ed25519-hdkey'
 
 const BITCOIN_PATH = "m/84'/0'/0'/0/0"
 const LITECOIN_PATH = "m/84'/2'/0'/0/0"
 const DOGECOIN_PATH = "m/44'/3'/0'/0/0"
+/** Path Solana: Trust Wallet usa m/44'/501'/0'; Phantom usa m/44'/501'/0'/0'. Usamos Trust por defecto. */
+const SOLANA_PATH = "m/44'/501'/0'"
+
+/** Seed BIP39 (64 bytes) a hex para micro-ed25519-hdkey (igual que cookbook: seed.toString("hex")). */
+function bip39SeedToHex(seed: Buffer | Uint8Array): string {
+  const view = seed instanceof Uint8Array ? seed : new Uint8Array(seed)
+  return Array.from(view.subarray ? view.subarray(0, 64) : view.slice(0, 64))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
 
 const dogecoinNetwork: bitcoin.Network = {
   messagePrefix: '\x19Dogecoin Signed Message:\n',
@@ -37,11 +49,18 @@ export interface DerivedWallets {
   ethAddress: string
   dogeAddress: string
   ltcAddress: string
+  solAddress: string
+}
+
+/** Normaliza mnemónico según BIP39 (NFKD) para que el seed coincida con otras wallets. */
+function normalizeMnemonic(mnemonic: string): string {
+  return (mnemonic || '').trim().normalize('NFKD')
 }
 
 /** Deriva todas las direcciones (BTC, LTC, DOGE, ETH) a partir de una frase existente. Útil para rellenar LTC/ETH en cuentas vinculadas antes de añadir esas monedas. */
 export function deriveAddressesFromMnemonic(mnemonic: string): Omit<DerivedWallets, 'mnemonic'> {
-  const seed = bip39.mnemonicToSeedSync(mnemonic.trim())
+  const normalized = normalizeMnemonic(mnemonic)
+  const seed = bip39.mnemonicToSeedSync(normalized, '')
   const root = HDKey.fromMasterSeed(seed)
 
   const btcChild = root.derive(BITCOIN_PATH)
@@ -68,16 +87,23 @@ export function deriveAddressesFromMnemonic(mnemonic: string): Omit<DerivedWalle
   })
   const dogeAddress = dogePayment.address ?? ''
 
-  const ethWallet = Wallet.fromPhrase(mnemonic.trim())
+  const ethWallet = Wallet.fromPhrase(normalized)
   const ethAddress = ethWallet.address
 
-  return { btcAddress, ethAddress, dogeAddress, ltcAddress }
+  // Solana: micro-ed25519-hdkey + m/44'/501'/0'/0' (cookbook oficial / Phantom al importar)
+  const solanaSeedHex = bip39SeedToHex(seed)
+  const solHd = SolanaHDKey.fromMasterSeed(solanaSeedHex).derive(SOLANA_PATH)
+  const solKeypair = Keypair.fromSeed(solHd.privateKey)
+  const solAddress = solKeypair.publicKey.toBase58()
+
+  return { btcAddress, ethAddress, dogeAddress, ltcAddress, solAddress }
 }
 
-/** Genera una frase semilla de 12 palabras y deriva Bitcoin (bc1q), Ethereum (0x), Litecoin (ltc1) y Dogecoin (D...). */
+/** Genera una frase semilla de 12 palabras y deriva direcciones para Bitcoin, Ethereum, Litecoin, Dogecoin y Solana. */
 export function generateSeedPhraseAndWallets(): DerivedWallets {
   const mnemonic = bip39.generateMnemonic(128)
-  const seed = bip39.mnemonicToSeedSync(mnemonic)
+  const normalized = normalizeMnemonic(mnemonic)
+  const seed = bip39.mnemonicToSeedSync(normalized, '')
   const root = HDKey.fromMasterSeed(seed)
 
   const btcChild = root.derive(BITCOIN_PATH)
@@ -104,13 +130,27 @@ export function generateSeedPhraseAndWallets(): DerivedWallets {
   })
   const dogeAddress = dogePayment.address ?? ''
 
-  const ethWallet = Wallet.fromPhrase(mnemonic)
+  const ethWallet = Wallet.fromPhrase(normalized)
   const ethAddress = ethWallet.address
 
-  return { mnemonic, btcAddress, ethAddress, dogeAddress, ltcAddress }
+  const solanaSeedHex = bip39SeedToHex(seed)
+  const solHd = SolanaHDKey.fromMasterSeed(solanaSeedHex).derive(SOLANA_PATH)
+  const solKeypair = Keypair.fromSeed(solHd.privateKey)
+  const solAddress = solKeypair.publicKey.toBase58()
+
+  return { mnemonic, btcAddress, ethAddress, dogeAddress, ltcAddress, solAddress }
 }
 
 /** Valida que una frase sea un mnemónico BIP39 válido (español o inglés). */
 export function isValidMnemonic(phrase: string): boolean {
-  return bip39.validateMnemonic(phrase.trim())
+  return bip39.validateMnemonic(normalizeMnemonic(phrase))
+}
+
+/** Deriva solo el Keypair de Solana desde el mnemónico (para firmar transacciones, ej. swap Jupiter). Misma derivación que deriveAddressesFromMnemonic. */
+export function getSolanaKeypairFromMnemonic(mnemonic: string): Keypair {
+  const normalized = normalizeMnemonic(mnemonic)
+  const seed = bip39.mnemonicToSeedSync(normalized, '')
+  const solanaSeedHex = bip39SeedToHex(seed)
+  const solHd = SolanaHDKey.fromMasterSeed(solanaSeedHex).derive(SOLANA_PATH)
+  return Keypair.fromSeed(solHd.privateKey)
 }

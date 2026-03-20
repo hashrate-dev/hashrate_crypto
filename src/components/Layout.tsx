@@ -1,12 +1,13 @@
 import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Home, BarChart3, Send, QrCode, History, Settings } from 'lucide-react'
+import { Home, BarChart3, Send, ArrowLeftRight, QrCode, History, Settings } from 'lucide-react'
 import { useLanguage } from '../context/LanguageContext'
 
 const navItems = [
   { path: '/', icon: Home, labelKey: 'portfolio' },
   { path: '/mercado', icon: BarChart3, labelKey: 'market' },
+  { path: '/swap', icon: ArrowLeftRight, labelKey: 'swap_nav' },
   { path: '/send', icon: Send, labelKey: 'send_nav' },
   { path: '/receive', icon: QrCode, labelKey: 'receive_nav' },
   { path: '/history', icon: History, labelKey: 'history' },

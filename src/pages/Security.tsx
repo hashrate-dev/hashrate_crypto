@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, ArrowRight, Shield, Lock, Smartphone, Eye, EyeOff } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Shield, Lock, Smartphone, Eye } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import {
@@ -490,7 +490,7 @@ export function Security() {
                         title={showCurrentPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
                         tabIndex={-1}
                       >
-                        {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        <Eye className="w-4 h-4 text-white/50" />
                       </button>
                     </div>
                   )}
@@ -524,7 +524,7 @@ export function Security() {
                       title={showNewPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
                       tabIndex={-1}
                     >
-                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      <Eye className="w-4 h-4 text-white/50" />
                     </button>
                   </div>
                 </div>
@@ -548,7 +548,7 @@ export function Security() {
                       title={showConfirmNewPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
                       tabIndex={-1}
                     >
-                      {showConfirmNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      <Eye className="w-4 h-4 text-white/50" />
                     </button>
                   </div>
                 </div>

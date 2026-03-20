@@ -1,8 +1,7 @@
 /**
- * Precios: Binance cuando el proxy responde; CoinGecko como respaldo (sin CORS).
+ * Precios: solo Binance (vía proxy CORS).
  */
 
-const COINGECKO_BASE = 'https://api.coingecko.com/api/v3'
 const BINANCE_BASE = 'https://api.binance.com/api/v3'
 
 const CORS_PROXIES = [
@@ -45,58 +44,76 @@ function getBinanceSymbol(assetId: string): string {
   if (assetId === 'doge') return 'DOGEUSDT'
   if (assetId === 'ltc') return 'LTCUSDT'
   if (assetId === 'eth') return 'ETHUSDT'
+  if (assetId === 'sol') return 'SOLUSDT'
   return 'BTCUSDT'
 }
 
-/** CoinGecko id por activo. */
-function getCoinGeckoId(assetId: string): string {
-  if (assetId === 'usdt') return 'tether'
-  if (assetId === 'doge') return 'dogecoin'
-  if (assetId === 'ltc') return 'litecoin'
-  if (assetId === 'eth') return 'ethereum'
-  return 'bitcoin'
+const PRICE_API = '/api/binance/price'
+const PRICES_API = '/api/binance/prices'
+const BACKEND_FALLBACK = typeof window !== 'undefined' && (window.location?.port === '5174' || window.location?.port === '5175') ? 'http://127.0.0.1:3001' : ''
+const PRICE_TIMEOUT_MS = 6000
+
+/** URLs para precios: una sola llamada que devuelve todos (misma fuente que Bitcoin). */
+function getPricesApiUrls(): string[] {
+  return [PRICES_API, ...(BACKEND_FALLBACK ? [`${BACKEND_FALLBACK}${PRICES_API}`] : [])]
 }
 
-/** Precio actual de la moneda (no depende de la temporalidad). Binance ticker o CoinGecko. */
+function withPriceTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('Timeout')), ms)),
+  ])
+}
+
+/** Precio actual: solo Binance. Backend (precio único o batch), luego proxies CORS. */
 export async function fetchCurrentPrice(assetId: string): Promise<number> {
-  const symbol = getBinanceSymbol(assetId)
-  for (const proxy of CORS_PROXIES) {
-    try {
-      const url = `${BINANCE_BASE}/ticker/price?symbol=${symbol}`
-      const res = await fetch(proxy(url))
-      if (!res.ok) continue
-      const text = await res.text()
-      const data = JSON.parse(text) as { price?: string }
-      const p = Number(data?.price)
-      if (Number.isFinite(p)) return p
-    } catch {
-      /* siguiente proxy */
+  const run = async (): Promise<number> => {
+    const singleUrls = [
+      `${PRICE_API}?asset=${encodeURIComponent(assetId)}`,
+      ...(BACKEND_FALLBACK ? [`${BACKEND_FALLBACK}${PRICE_API}?asset=${encodeURIComponent(assetId)}`] : []),
+    ]
+    for (const url of singleUrls) {
+      try {
+        const res = await fetch(url)
+        if (!res.ok) continue
+        const data = (await res.json()) as { price?: string }
+        const p = Number(data?.price)
+        if (Number.isFinite(p)) return p
+      } catch {
+        /* siguiente */
+      }
     }
+    const batchUrls = [PRICES_API, ...(BACKEND_FALLBACK ? [`${BACKEND_FALLBACK}${PRICES_API}`] : [])]
+    for (const url of batchUrls) {
+      try {
+        const res = await fetch(url)
+        if (!res.ok) continue
+        const data = (await res.json()) as Record<string, number>
+        const p = data[assetId] != null ? Number(data[assetId]) : NaN
+        if (Number.isFinite(p) && p > 0) return p
+      } catch {
+        /* siguiente */
+      }
+    }
+    const symbol = getBinanceSymbol(assetId)
+    for (const proxy of CORS_PROXIES) {
+      try {
+        const url = `${BINANCE_BASE}/ticker/price?symbol=${symbol}`
+        const res = await fetch(proxy(url))
+        if (!res.ok) continue
+        const text = await res.text()
+        const data = JSON.parse(text) as { price?: string }
+        const p = Number(data?.price)
+        if (Number.isFinite(p)) return p
+      } catch {
+        /* siguiente proxy */
+      }
+    }
+    return 0
   }
-  const coinId = getCoinGeckoId(assetId)
-  const res = await fetch(
-    `${COINGECKO_BASE}/simple/price?ids=${coinId}&vs_currencies=usd`
-  )
-  if (!res.ok) throw new Error('No se pudo obtener el precio')
-  const data: Record<string, { usd?: number }> = await res.json()
-  const p = data[coinId]?.usd
-  if (p != null && Number.isFinite(p)) return p
-  return 0
+  return withPriceTimeout(run(), PRICE_TIMEOUT_MS).catch(() => 0)
 }
 
-
-/** Días CoinGecko por rango (para fallback cuando Binance falla). */
-const COINGECKO_DAYS: Record<ChartRange, number> = {
-  '1m': 1,
-  '5m': 1,
-  '15m': 1,
-  '30m': 1,
-  '1h': 1,
-  '4h': 7,
-  '1d': 1,
-  '1w': 7,
-  '1M': 30,
-}
 
 /** Reducir a máximo maxPoints para que el gráfico no sea pesado. */
 function samplePrices(prices: number[], maxPoints: number): number[] {
@@ -108,16 +125,6 @@ function samplePrices(prices: number[], maxPoints: number): number[] {
     out.push(prices[idx])
   }
   return out
-}
-
-/** CoinGecko market_chart (sin proxy, CORS permitido). */
-async function fetchCoinGeckoChart(coinId: string, days: number): Promise<number[]> {
-  const url = `${COINGECKO_BASE}/coins/${coinId}/market_chart?vs_currency=usd&days=${days}`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`CoinGecko: ${res.status}`)
-  const data: { prices?: [number, number][] } = await res.json()
-  const raw = (data.prices ?? []).map(([, p]) => p).filter((p): p is number => Number.isFinite(p))
-  return raw
 }
 
 /** Intenta un proxy y devuelve precios o rechaza. */
@@ -140,7 +147,7 @@ function fetchBinanceViaProxy(proxyUrl: string): Promise<number[]> {
 
 const BINANCE_KLINES_TIMEOUT_MS = 8000
 
-/** Timeout: evita que se cuelgue si los proxies no responden; así el race puede usar CoinGecko. */
+/** Timeout: evita que se cuelgue si los proxies no responden. */
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('Timeout')), ms)
@@ -181,17 +188,7 @@ function chartCacheKey(assetId: string, range: ChartRange): string {
   return `${assetId}|${range}`
 }
 
-/** Devuelve datos listos para el gráfico desde CoinGecko (rápido, sin proxy). */
-async function fetchChartFromCoinGecko(assetId: string, range: ChartRange): Promise<number[]> {
-  const coinId = getCoinGeckoId(assetId)
-  const days = Math.max(1, COINGECKO_DAYS[range])
-  const prices = await fetchCoinGeckoChart(coinId, days)
-  if (prices.length === 0) return []
-  const slice = days === 1 && prices.length > 24 ? prices.slice(-24) : prices
-  return samplePrices(slice, MAX_POINTS)
-}
-
-/** Devuelve datos listos desde Binance. */
+/** Datos del gráfico: solo Binance. */
 async function fetchChartFromBinance(assetId: string, range: ChartRange): Promise<number[]> {
   const symbol = getBinanceSymbol(assetId)
   const prices = await fetchBinanceKlines(symbol, range)
@@ -199,20 +196,7 @@ async function fetchChartFromBinance(assetId: string, range: ChartRange): Promis
   return samplePrices(prices, MAX_POINTS)
 }
 
-/** El que responda primero gana; si viene vacío se usa el otro. */
-async function fetchChartRace(assetId: string, range: ChartRange): Promise<number[]> {
-  const b = fetchChartFromBinance(assetId, range).catch(() => [] as number[])
-  const c = fetchChartFromCoinGecko(assetId, range).catch(() => [] as number[])
-  const winner = await Promise.race([
-    b.then((r) => ({ data: r, other: c })),
-    c.then((r) => ({ data: r, other: b })),
-  ])
-  if (winner.data.length > 0) return winner.data
-  const other = await winner.other
-  return other
-}
-
-/** Historial: caché al instante; race Binance vs CoinGecko (Binance primero, CoinGecko respaldo). */
+/** Historial: solo Binance, con caché. */
 export async function fetchMarketChartByRange(
   assetId: string,
   range: ChartRange
@@ -220,81 +204,71 @@ export async function fetchMarketChartByRange(
   const key = chartCacheKey(assetId, range)
   const cached = chartCache.get(key)
   if (cached && cached.length > 0) {
-    void fetchChartRace(assetId, range).then((data) => {
+    void fetchChartFromBinance(assetId, range).then((data) => {
       if (data.length > 0) chartCache.set(key, data)
     })
     return cached
   }
-  const data = await fetchChartRace(assetId, range)
+  const data = await fetchChartFromBinance(assetId, range).catch(() => [])
   if (data.length > 0) chartCache.set(key, data)
   return data
 }
 
 const SPARKLINE_POINTS = 32
 
-/** Precios BTC para sparkline: Binance o CoinGecko. */
+/** Precios para sparklines: solo Binance. */
 export async function fetchBitcoinPrices(): Promise<number[]> {
   try {
     const prices = await fetchBinanceKlines('BTCUSDT', '1h')
-    if (prices.length > 0) return samplePrices(prices, SPARKLINE_POINTS)
+    return prices.length > 0 ? samplePrices(prices, SPARKLINE_POINTS) : []
   } catch {
-    /* sigue a CoinGecko */
+    return []
   }
-  const prices = await fetchCoinGeckoChart('bitcoin', 7)
-  if (prices.length === 0) return []
-  return samplePrices(prices, SPARKLINE_POINTS)
 }
 
-/** Precios USDT para sparkline: Binance o CoinGecko. */
 export async function fetchUsdtPrices(): Promise<number[]> {
   try {
     const prices = await fetchBinanceKlines('USDCUSDT', '1h')
-    if (prices.length > 0) return samplePrices(prices, SPARKLINE_POINTS)
+    return prices.length > 0 ? samplePrices(prices, SPARKLINE_POINTS) : []
   } catch {
-    /* sigue a CoinGecko */
+    return []
   }
-  const prices = await fetchCoinGeckoChart('tether', 7)
-  if (prices.length === 0) return []
-  return samplePrices(prices, SPARKLINE_POINTS)
 }
 
-/** Precios Dogecoin para sparkline: Binance o CoinGecko. */
 export async function fetchDogePrices(): Promise<number[]> {
   try {
     const prices = await fetchBinanceKlines('DOGEUSDT', '1h')
-    if (prices.length > 0) return samplePrices(prices, SPARKLINE_POINTS)
+    return prices.length > 0 ? samplePrices(prices, SPARKLINE_POINTS) : []
   } catch {
-    /* sigue a CoinGecko */
+    return []
   }
-  const prices = await fetchCoinGeckoChart('dogecoin', 7)
-  if (prices.length === 0) return []
-  return samplePrices(prices, SPARKLINE_POINTS)
 }
 
-/** Precios Litecoin para sparkline: Binance o CoinGecko. */
 export async function fetchLtcPrices(): Promise<number[]> {
   try {
     const prices = await fetchBinanceKlines('LTCUSDT', '1h')
-    if (prices.length > 0) return samplePrices(prices, SPARKLINE_POINTS)
+    return prices.length > 0 ? samplePrices(prices, SPARKLINE_POINTS) : []
   } catch {
-    /* sigue a CoinGecko */
+    return []
   }
-  const prices = await fetchCoinGeckoChart('litecoin', 7)
-  if (prices.length === 0) return []
-  return samplePrices(prices, SPARKLINE_POINTS)
 }
 
-/** Precios Ethereum para sparkline: Binance o CoinGecko. */
 export async function fetchEthPrices(): Promise<number[]> {
   try {
     const prices = await fetchBinanceKlines('ETHUSDT', '1h')
-    if (prices.length > 0) return samplePrices(prices, SPARKLINE_POINTS)
+    return prices.length > 0 ? samplePrices(prices, SPARKLINE_POINTS) : []
   } catch {
-    /* sigue a CoinGecko */
+    return []
   }
-  const prices = await fetchCoinGeckoChart('ethereum', 7)
-  if (prices.length === 0) return []
-  return samplePrices(prices, SPARKLINE_POINTS)
+}
+
+export async function fetchSolPrices(): Promise<number[]> {
+  try {
+    const prices = await fetchBinanceKlines('SOLUSDT', '1h')
+    return prices.length > 0 ? samplePrices(prices, SPARKLINE_POINTS) : []
+  } catch {
+    return []
+  }
 }
 
 export type AssetChartData = {
@@ -304,6 +278,7 @@ export type AssetChartData = {
   doge: number[]
   ltc: number[]
   eth: number[]
+  sol: number[]
 }
 
 export type CurrentPrices = {
@@ -312,6 +287,7 @@ export type CurrentPrices = {
   doge: number
   ltc: number
   eth: number
+  sol: number
 }
 
 export type AssetChartsResult = {
@@ -322,15 +298,66 @@ export type AssetChartsResult = {
 const CACHE_MS = 60_000
 let cache: { data: AssetChartsResult; ts: number } | null = null
 
+/** Precio o fallback al último del sparkline si el backend devuelve 0. */
+function priceOrFallback(price: number, sparkline: number[]): number {
+  if (price > 0) return price
+  return sparkline.length > 0 ? sparkline[sparkline.length - 1] : 0
+}
+
+/** Todos los precios en una llamada al backend (misma fuente que Bitcoin: Binance ticker/price). */
+async function fetchAllPricesFromBackend(): Promise<CurrentPrices | null> {
+  for (const url of getPricesApiUrls()) {
+    try {
+      const res = await fetch(url)
+      if (!res.ok) continue
+      const data = (await res.json()) as Record<string, number>
+      const btc = Number(data.btc)
+      const usdt = Number(data.usdt)
+      const doge = Number(data.doge)
+      const ltc = Number(data.ltc)
+      const eth = Number(data.eth)
+      const sol = Number(data.sol)
+      if (Number.isFinite(btc) || Number.isFinite(usdt)) {
+        return {
+          btc: Number.isFinite(btc) ? btc : 0,
+          usdt: Number.isFinite(usdt) ? usdt : 0,
+          doge: Number.isFinite(doge) ? doge : 0,
+          ltc: Number.isFinite(ltc) ? ltc : 0,
+          eth: Number.isFinite(eth) ? eth : 0,
+          sol: Number.isFinite(sol) ? sol : 0,
+        }
+      }
+    } catch {
+      /* siguiente URL */
+    }
+  }
+  return null
+}
+
+/** Solo precios actuales desde backend (Binance). Rápido para mostrar la lista enseguida. */
+const PRICES_ONLY_TIMEOUT_MS = 4000
+
+export async function fetchPricesFromBackendOnly(): Promise<CurrentPrices> {
+  const result = await withPriceTimeout(fetchAllPricesFromBackend(), PRICES_ONLY_TIMEOUT_MS).catch(() => null)
+  if (result) return result
+  return { btc: 0, usdt: 0, doge: 0, ltc: 0, eth: 0, sol: 0 }
+}
+
+/** Lista Mercado: todas las monedas con el mismo precio que Bitcoin (backend Binance). Fallback a sparkline si falla. */
 export async function fetchAllAssetCharts(): Promise<AssetChartsResult> {
   if (cache && Date.now() - cache.ts < CACHE_MS) return cache.data
-  const [btcPrices, usdtPrices, dogePrices, ltcPrices, ethPrices] = await Promise.all([
-    fetchBitcoinPrices(),
-    fetchUsdtPrices(),
-    fetchDogePrices(),
-    fetchLtcPrices(),
-    fetchEthPrices(),
+  const [chartResult, allPrices] = await Promise.all([
+    Promise.all([
+      fetchBitcoinPrices(),
+      fetchUsdtPrices(),
+      fetchDogePrices(),
+      fetchLtcPrices(),
+      fetchEthPrices(),
+      fetchSolPrices(),
+    ]),
+    withPriceTimeout(fetchAllPricesFromBackend(), PRICE_TIMEOUT_MS).catch(() => null),
   ])
+  const [btcPrices, usdtPrices, dogePrices, ltcPrices, ethPrices, solPrices] = chartResult
   const chartData: AssetChartData = {
     btc: btcPrices,
     btc_lightning: btcPrices,
@@ -338,13 +365,35 @@ export async function fetchAllAssetCharts(): Promise<AssetChartsResult> {
     doge: dogePrices,
     ltc: ltcPrices,
     eth: ethPrices,
+    sol: solPrices,
   }
-  const currentPrices: CurrentPrices = {
-    btc: btcPrices.length > 0 ? btcPrices[btcPrices.length - 1] : 0,
-    usdt: usdtPrices.length > 0 ? usdtPrices[usdtPrices.length - 1] : 0,
-    doge: dogePrices.length > 0 ? dogePrices[dogePrices.length - 1] : 0,
-    ltc: ltcPrices.length > 0 ? ltcPrices[ltcPrices.length - 1] : 0,
-    eth: ethPrices.length > 0 ? ethPrices[ethPrices.length - 1] : 0,
+  let currentPrices: CurrentPrices
+  if (allPrices) {
+    currentPrices = {
+      btc: priceOrFallback(allPrices.btc, btcPrices),
+      usdt: priceOrFallback(allPrices.usdt, usdtPrices),
+      doge: priceOrFallback(allPrices.doge, dogePrices),
+      ltc: priceOrFallback(allPrices.ltc, ltcPrices),
+      eth: priceOrFallback(allPrices.eth, ethPrices),
+      sol: priceOrFallback(allPrices.sol, solPrices),
+    }
+  } else {
+    const [btcP, usdtP, dogeP, ltcP, ethP, solP] = await Promise.all([
+      fetchCurrentPrice('btc'),
+      fetchCurrentPrice('usdt'),
+      fetchCurrentPrice('doge'),
+      fetchCurrentPrice('ltc'),
+      fetchCurrentPrice('eth'),
+      fetchCurrentPrice('sol'),
+    ])
+    currentPrices = {
+      btc: priceOrFallback(btcP, btcPrices),
+      usdt: priceOrFallback(usdtP, usdtPrices),
+      doge: priceOrFallback(dogeP, dogePrices),
+      ltc: priceOrFallback(ltcP, ltcPrices),
+      eth: priceOrFallback(ethP, ethPrices),
+      sol: priceOrFallback(solP, solPrices),
+    }
   }
   cache = { data: { chartData, currentPrices }, ts: Date.now() }
   return cache.data
