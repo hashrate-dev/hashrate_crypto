@@ -1,5 +1,4 @@
-// Rutas relativas: en dev Vite hace proxy /api → backend (3001). Así evitamos 404 si el backend es el correcto.
-const API_BASE = ''
+import { apiUrl } from '../lib/apiBase'
 
 export interface MonitorUser {
   id: number
@@ -20,7 +19,7 @@ export async function getMonitorUsersWithBalances(): Promise<MonitorUserWithBala
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 90000)
   try {
-    const res = await fetch(`${API_BASE}/api/monitor/users-with-balances`, { signal: controller.signal })
+    const res = await fetch(apiUrl('/api/monitor/users-with-balances'), { signal: controller.signal })
     clearTimeout(timeoutId)
     if (!res.ok) throw new Error('Error al cargar usuarios con saldos')
     const data = await res.json()
@@ -40,14 +39,14 @@ export interface AccessLogEntry {
 }
 
 export async function getMonitorUsers(): Promise<MonitorUser[]> {
-  const res = await fetch(`${API_BASE}/api/monitor/users`)
+  const res = await fetch(apiUrl('/api/monitor/users'))
   if (!res.ok) throw new Error('Error al cargar usuarios')
   const data = await res.json()
   return data.users ?? []
 }
 
 export async function getAccessLog(limit = 200): Promise<AccessLogEntry[]> {
-  const res = await fetch(`${API_BASE}/api/monitor/access-log?limit=${limit}`)
+  const res = await fetch(apiUrl(`/api/monitor/access-log?limit=${limit}`))
   if (!res.ok) throw new Error('Error al cargar histórico de accesos')
   const data = await res.json()
   return data.log ?? []
@@ -83,7 +82,7 @@ export interface BalanceSnapshotEntry {
 }
 
 export async function getBalanceSnapshots(): Promise<BalanceSnapshotEntry[]> {
-  const res = await fetch(`${API_BASE}/api/monitor/balance-snapshots`)
+  const res = await fetch(apiUrl('/api/monitor/balance-snapshots'))
   if (!res.ok) throw new Error('Error al cargar snapshots de saldos')
   const data = await res.json()
   return data.snapshots ?? []
@@ -95,7 +94,7 @@ export async function postBalanceSnapshot(entry: {
   totalUsd: string | number
   balances: Record<string, string>
 }): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/monitor/balance-snapshot`, {
+  const res = await fetch(apiUrl('/api/monitor/balance-snapshot'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(entry),
@@ -110,7 +109,7 @@ export interface SwapConfig {
 }
 
 export async function getMonitorSwapConfig(): Promise<SwapConfig> {
-  const res = await fetch(`${API_BASE}/api/monitor/swap-config`)
+  const res = await fetch(apiUrl('/api/monitor/swap-config'))
   if (!res.ok) throw new Error('Error al cargar configuración Jupiter')
   const data = await res.json()
   return {
@@ -121,7 +120,7 @@ export async function getMonitorSwapConfig(): Promise<SwapConfig> {
 }
 
 export async function updateMonitorSwapConfig(updates: Partial<SwapConfig>): Promise<SwapConfig> {
-  const res = await fetch(`${API_BASE}/api/monitor/swap-config`, {
+  const res = await fetch(apiUrl('/api/monitor/swap-config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates),
@@ -132,7 +131,7 @@ export async function updateMonitorSwapConfig(updates: Partial<SwapConfig>): Pro
 }
 
 export async function getMonitorSwaps(limit = 200): Promise<SwapLogEntry[]> {
-  const res = await fetch(`${API_BASE}/api/monitor/swaps?limit=${limit}`)
+  const res = await fetch(apiUrl(`/api/monitor/swaps?limit=${limit}`))
   if (!res.ok) throw new Error('Error al cargar swaps')
   const data = await res.json()
   return data.swaps ?? []
@@ -149,7 +148,7 @@ export async function logMonitorSwap(entry: {
   commissionApprox: string
   txSignature: string
 }): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/monitor/log-swap`, {
+  const res = await fetch(apiUrl('/api/monitor/log-swap'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(entry),
@@ -158,7 +157,7 @@ export async function logMonitorSwap(entry: {
 }
 
 export async function getMonitorOperations(limit = 300): Promise<OperationLogEntry[]> {
-  const res = await fetch(`${API_BASE}/api/monitor/operations?limit=${limit}`)
+  const res = await fetch(apiUrl(`/api/monitor/operations?limit=${limit}`))
   if (!res.ok) throw new Error('Error al cargar operaciones')
   const data = await res.json()
   return data.operations ?? []
@@ -170,7 +169,7 @@ export async function logMonitorOperation(entry: {
   type: string
   detail?: string | null
 }): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/monitor/log-operation`, {
+  const res = await fetch(apiUrl('/api/monitor/log-operation'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(entry),

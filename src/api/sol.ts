@@ -1,6 +1,8 @@
 /**
- * Saldo SOL: vía backend (proxy a la red Solana). Prueba /api (proxy Vite) y luego backend directo :3001.
+ * Saldo SOL: vía backend (proxy a la red Solana). En dev: proxy Vite o :3001; en prod: VITE_API_URL.
  */
+
+import { apiUrlCandidates } from '../lib/apiBase'
 
 export interface SolBalanceResult {
   balanceSol: string
@@ -8,13 +10,9 @@ export interface SolBalanceResult {
 
 const SOLANA_BALANCE_PATH = '/api/solana/balance'
 
-/** URLs a probar: primero relativo (proxy), luego backend directo por si el proxy no reenvía. */
 function getSolanaBalanceUrls(addr: string): string[] {
   const q = `?address=${encodeURIComponent(addr)}`
-  const base = typeof window !== 'undefined' && window.location?.port === '5174'
-    ? 'http://127.0.0.1:3001'
-    : ''
-  return [`${SOLANA_BALANCE_PATH}${q}`, base ? `${base}${SOLANA_BALANCE_PATH}${q}` : ''].filter(Boolean)
+  return apiUrlCandidates(`${SOLANA_BALANCE_PATH}${q}`)
 }
 
 /** Obtiene el balance SOL de una dirección (base58) desde la red Solana vía nuestro backend. */

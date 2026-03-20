@@ -2,6 +2,8 @@
  * Precios: solo Binance (vía proxy CORS).
  */
 
+import { apiUrlCandidates } from '../lib/apiBase'
+
 const BINANCE_BASE = 'https://api.binance.com/api/v3'
 
 const CORS_PROXIES = [
@@ -50,12 +52,11 @@ function getBinanceSymbol(assetId: string): string {
 
 const PRICE_API = '/api/binance/price'
 const PRICES_API = '/api/binance/prices'
-const BACKEND_FALLBACK = typeof window !== 'undefined' && (window.location?.port === '5174' || window.location?.port === '5175') ? 'http://127.0.0.1:3001' : ''
 const PRICE_TIMEOUT_MS = 6000
 
 /** URLs para precios: una sola llamada que devuelve todos (misma fuente que Bitcoin). */
 function getPricesApiUrls(): string[] {
-  return [PRICES_API, ...(BACKEND_FALLBACK ? [`${BACKEND_FALLBACK}${PRICES_API}`] : [])]
+  return apiUrlCandidates(PRICES_API)
 }
 
 function withPriceTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -68,10 +69,7 @@ function withPriceTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 /** Precio actual: solo Binance. Backend (precio único o batch), luego proxies CORS. */
 export async function fetchCurrentPrice(assetId: string): Promise<number> {
   const run = async (): Promise<number> => {
-    const singleUrls = [
-      `${PRICE_API}?asset=${encodeURIComponent(assetId)}`,
-      ...(BACKEND_FALLBACK ? [`${BACKEND_FALLBACK}${PRICE_API}?asset=${encodeURIComponent(assetId)}`] : []),
-    ]
+    const singleUrls = apiUrlCandidates(`${PRICE_API}?asset=${encodeURIComponent(assetId)}`)
     for (const url of singleUrls) {
       try {
         const res = await fetch(url)
@@ -83,7 +81,7 @@ export async function fetchCurrentPrice(assetId: string): Promise<number> {
         /* siguiente */
       }
     }
-    const batchUrls = [PRICES_API, ...(BACKEND_FALLBACK ? [`${BACKEND_FALLBACK}${PRICES_API}`] : [])]
+    const batchUrls = apiUrlCandidates(PRICES_API)
     for (const url of batchUrls) {
       try {
         const res = await fetch(url)

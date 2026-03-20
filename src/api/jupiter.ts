@@ -1,9 +1,8 @@
+import { apiUrl } from '../lib/apiBase'
+
 /**
  * Jupiter Swap (Solana): quote y swap vía backend. La comisión se envía a la wallet configurada en el servidor.
  */
-
-const API_BASE = ''
-
 export interface JupiterQuoteResponse {
   inputMint: string
   outputMint: string
@@ -35,7 +34,7 @@ export async function getJupiterQuote(params: {
     amount: params.amount,
   })
   if (params.slippageBps != null) q.set('slippageBps', String(params.slippageBps))
-  const res = await fetch(`${API_BASE}/api/jupiter/quote?${q}`)
+  const res = await fetch(`${apiUrl('/api/jupiter/quote')}?${q}`)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error((err as { error?: string }).error || 'Error al obtener cotización')
@@ -48,7 +47,7 @@ export async function getJupiterSwapTransaction(params: {
   quoteResponse: JupiterQuoteResponse
   userPublicKey: string
 }): Promise<JupiterSwapResponse> {
-  const res = await fetch(`${API_BASE}/api/jupiter/swap`, {
+  const res = await fetch(apiUrl('/api/jupiter/swap'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -65,7 +64,7 @@ export async function getJupiterSwapTransaction(params: {
 
 /** Envía la transacción firmada (base64) a la red Solana vía backend. */
 export async function sendSolanaTransaction(signedTransactionBase64: string): Promise<{ signature: string }> {
-  const res = await fetch(`${API_BASE}/api/solana/send-transaction`, {
+  const res = await fetch(apiUrl('/api/solana/send-transaction'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ signedTransaction: signedTransactionBase64 }),

@@ -1,5 +1,4 @@
-// Solo localhost: backend en 3001, datos en server/data/
-const API_BASE = import.meta.env.DEV ? 'http://127.0.0.1:3001' : ''
+import { apiUrl } from '../lib/apiBase'
 
 export interface RegisterPayload {
   email: string
@@ -41,11 +40,11 @@ export interface RegisterResponse {
 
 /** Mensaje cuando el backend no está en marcha (connection refused / failed to fetch). */
 export const BACKEND_NOT_RUNNING_MSG =
-  'El backend no está corriendo. Ejecutá desde la raíz del proyecto: npm run dev (arranca backend + frontend en http://127.0.0.1:3001 y Vite).'
+  'No se pudo conectar con el API. En local: npm run dev. En producción (Vercel): configurá la variable VITE_API_URL con la URL pública de tu backend.'
 
 export async function registerUser(data: RegisterPayload): Promise<RegisterResponse> {
   try {
-    const res = await fetch(`${API_BASE}/api/register`, {
+    const res = await fetch(apiUrl('/api/register'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -62,14 +61,14 @@ export async function registerUser(data: RegisterPayload): Promise<RegisterRespo
 }
 
 export async function getUserById(id: number): Promise<{ user: User }> {
-  const res = await fetch(`${API_BASE}/api/users/${id}`)
+  const res = await fetch(apiUrl(`/api/users/${id}`))
   const json = await res.json()
   if (!res.ok) throw new Error(json?.error ?? 'Usuario no encontrado')
   return json
 }
 
 export async function getUserByEmail(email: string): Promise<{ user: User }> {
-  const res = await fetch(`${API_BASE}/api/users/by-email/${encodeURIComponent(email)}`)
+  const res = await fetch(apiUrl(`/api/users/by-email/${encodeURIComponent(email)}`))
   const json = await res.json()
   if (!res.ok) throw new Error(json?.error ?? 'Usuario no encontrado')
   return json
@@ -82,7 +81,7 @@ export interface LoginPayload {
 
 export async function loginUser(data: LoginPayload): Promise<{ user: User }> {
   try {
-    const res = await fetch(`${API_BASE}/api/login`, {
+    const res = await fetch(apiUrl('/api/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: data.email.trim(), password: data.password }),
@@ -108,7 +107,7 @@ export interface UpdateUserPayload {
 }
 
 export async function updateUser(id: number, data: UpdateUserPayload): Promise<{ message: string; user: User }> {
-  const res = await fetch(`${API_BASE}/api/users/${id}`, {
+  const res = await fetch(apiUrl(`/api/users/${id}`), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -136,7 +135,7 @@ async function parseJsonResponse(res: Response): Promise<Record<string, unknown>
 }
 
 export async function deleteUser(id: number): Promise<{ message: string }> {
-  const res = await fetch(`${API_BASE}/api/users/${id}`, { method: 'DELETE' })
+  const res = await fetch(apiUrl(`/api/users/${id}`), { method: 'DELETE' })
   const json = await parseJsonResponse(res)
   if (!res.ok) throw new Error((json?.error as string) ?? 'Error al eliminar la cuenta')
   return json as { message: string }
@@ -147,7 +146,7 @@ export async function deleteUserWithPassword(
   id: number,
   password: string
 ): Promise<{ message: string }> {
-  const res = await fetch(`${API_BASE}/api/users/${id}`, {
+  const res = await fetch(apiUrl(`/api/users/${id}`), {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password: password.trim() }),
@@ -167,7 +166,7 @@ export async function changePassword(id: number, data: ChangePasswordPayload): P
   const body: Record<string, string> = { newPassword: data.newPassword }
   if (data.pin != null) body.pin = data.pin
   else if (data.currentPassword != null) body.currentPassword = data.currentPassword
-  const res = await fetch(`${API_BASE}/api/users/${id}/password`, {
+  const res = await fetch(apiUrl(`/api/users/${id}/password`), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -178,7 +177,7 @@ export async function changePassword(id: number, data: ChangePasswordPayload): P
 }
 
 export async function setUserPin(id: number, pin: string): Promise<{ message: string }> {
-  const res = await fetch(`${API_BASE}/api/users/${id}/pin`, {
+  const res = await fetch(apiUrl(`/api/users/${id}/pin`), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pin }),
@@ -189,7 +188,7 @@ export async function setUserPin(id: number, pin: string): Promise<{ message: st
 }
 
 export async function clearUserPin(id: number): Promise<{ message: string }> {
-  const res = await fetch(`${API_BASE}/api/users/${id}/pin`, { method: 'DELETE' })
+  const res = await fetch(apiUrl(`/api/users/${id}/pin`), { method: 'DELETE' })
   const json = await parseJsonResponse(res)
   if (!res.ok) throw new Error((json?.error as string) ?? 'Error al eliminar el PIN')
   return json as { message: string }
@@ -208,7 +207,7 @@ export interface UpdateWalletsPayload {
 }
 
 export async function updateUserWallets(id: number, data: UpdateWalletsPayload): Promise<{ message: string; user: User }> {
-  const res = await fetch(`${API_BASE}/api/users/${id}/wallets`, {
+  const res = await fetch(apiUrl(`/api/users/${id}/wallets`), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -219,7 +218,7 @@ export async function updateUserWallets(id: number, data: UpdateWalletsPayload):
 }
 
 export async function getEncryptedSeed(id: number): Promise<{ encryptedSeed: string; seedSalt: string }> {
-  const res = await fetch(`${API_BASE}/api/users/${id}/encrypted-seed`)
+  const res = await fetch(apiUrl(`/api/users/${id}/encrypted-seed`))
   const json = await res.json()
   if (!res.ok) throw new Error((json?.error as string) ?? 'Error al obtener la frase')
   return json as { encryptedSeed: string; seedSalt: string }
@@ -230,7 +229,7 @@ export async function createLightningInvoice(
   id: number,
   options?: { amountSats?: number; description?: string }
 ): Promise<{ invoice: string; expiresIn?: number }> {
-  const res = await fetch(`${API_BASE}/api/users/${id}/lightning-invoice`, {
+  const res = await fetch(apiUrl(`/api/users/${id}/lightning-invoice`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -245,7 +244,7 @@ export async function createLightningInvoice(
 
 /** Google Authenticator: obtener secreto y URL para QR (no activa hasta enable). */
 export async function getTotpSetup(id: number): Promise<{ secret: string; otpauthUrl: string }> {
-  const res = await fetch(`${API_BASE}/api/users/${id}/totp-setup`)
+  const res = await fetch(apiUrl(`/api/users/${id}/totp-setup`))
   const json = await res.json()
   if (!res.ok) throw new Error((json?.error as string) ?? 'Error al generar 2FA')
   return json as { secret: string; otpauthUrl: string }
@@ -253,7 +252,7 @@ export async function getTotpSetup(id: number): Promise<{ secret: string; otpaut
 
 /** Activar 2FA: enviar secret + código de 6 dígitos. */
 export async function enableTotp(id: number, secret: string, token: string): Promise<{ message: string; user: User }> {
-  const res = await fetch(`${API_BASE}/api/users/${id}/totp-enable`, {
+  const res = await fetch(apiUrl(`/api/users/${id}/totp-enable`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ secret, token }),
@@ -265,7 +264,7 @@ export async function enableTotp(id: number, secret: string, token: string): Pro
 
 /** Verificar código TOTP (para enviar fondos). */
 export async function verifyTotp(id: number, token: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`${API_BASE}/api/users/${id}/totp-verify`, {
+  const res = await fetch(apiUrl(`/api/users/${id}/totp-verify`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token }),
@@ -277,7 +276,7 @@ export async function verifyTotp(id: number, token: string): Promise<{ ok: boole
 
 /** Desactivar 2FA. Requiere contraseña. */
 export async function disableTotp(id: number, password: string): Promise<{ message: string; user: User }> {
-  const res = await fetch(`${API_BASE}/api/users/${id}/totp-disable`, {
+  const res = await fetch(apiUrl(`/api/users/${id}/totp-disable`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password }),

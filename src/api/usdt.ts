@@ -2,6 +2,8 @@
  * USDT (ERC-20) vía backend (proxy) para evitar CORS.
  */
 
+import { apiUrlCandidates } from '../lib/apiBase'
+
 /** Obtener balance USDT de una dirección (ERC-20 en Ethereum). */
 export async function getUsdtBalance(walletAddress: string): Promise<{
   balanceRaw: string
@@ -11,12 +13,7 @@ export async function getUsdtBalance(walletAddress: string): Promise<{
   if (!addr || !addr.startsWith('0x')) {
     return { balanceRaw: '0', balanceUsdt: '0.00' }
   }
-  const urls = [
-    `/api/usdt/balance?address=${encodeURIComponent(addr)}`,
-    ...(typeof window !== 'undefined' && window.location?.port === '5174'
-      ? [`http://127.0.0.1:3001/api/usdt/balance?address=${encodeURIComponent(addr)}`]
-      : []),
-  ]
+  const urls = apiUrlCandidates(`/api/usdt/balance?address=${encodeURIComponent(addr)}`)
   for (const url of urls) {
     try {
       const res = await fetch(url)

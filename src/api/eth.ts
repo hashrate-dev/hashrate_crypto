@@ -1,6 +1,8 @@
 /**
- * Balance ETH vía backend (proxy) para evitar CORS. Fallback directo si backend no está.
+ * Balance ETH vía backend (proxy) para evitar CORS.
  */
+
+import { apiUrlCandidates } from '../lib/apiBase'
 
 export interface EthBalanceResult {
   balanceEth: string
@@ -12,12 +14,7 @@ export async function getEthBalance(walletAddress: string): Promise<EthBalanceRe
   if (!addr || !addr.startsWith('0x')) {
     return { balanceEth: '0' }
   }
-  const urls = [
-    `/api/eth/balance?address=${encodeURIComponent(addr)}`,
-    ...(typeof window !== 'undefined' && window.location?.port === '5174'
-      ? [`http://127.0.0.1:3001/api/eth/balance?address=${encodeURIComponent(addr)}`]
-      : []),
-  ]
+  const urls = apiUrlCandidates(`/api/eth/balance?address=${encodeURIComponent(addr)}`)
   for (const url of urls) {
     try {
       const res = await fetch(url)

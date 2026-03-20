@@ -1,4 +1,5 @@
 import type { Transaction } from '../store/wallet'
+import { apiUrl } from '../lib/apiBase'
 
 function mapBtcRow(row: Record<string, unknown>): Transaction {
   return {
@@ -78,7 +79,7 @@ function mapEthRow(row: Record<string, unknown>): Transaction {
 /** Transacciones Bitcoin reales de la dirección (mempool.space vía backend). */
 export async function fetchBtcTransactions(address: string): Promise<Transaction[]> {
   if (!address || address.length < 26) return []
-  const url = `/api/btc/transactions?address=${encodeURIComponent(address)}`
+  const url = apiUrl(`/api/btc/transactions?address=${encodeURIComponent(address)}`)
   try {
     const res = await fetch(url)
     if (!res.ok) return []
@@ -93,7 +94,7 @@ export async function fetchBtcTransactions(address: string): Promise<Transaction
 /** Transacciones SOL = misma fuente que Orb Transfers (Helius). address = dirección Solana de la wallet del usuario (por frase semilla). */
 export async function fetchSolTransactions(address: string): Promise<Transaction[]> {
   if (!address || address.length < 32 || address.length > 44) return []
-  const url = `/api/solana/transactions?address=${encodeURIComponent(address)}`
+  const url = apiUrl(`/api/solana/transactions?address=${encodeURIComponent(address)}`)
   try {
     const res = await fetch(url)
     if (!res.ok) return []
@@ -109,7 +110,7 @@ export async function fetchSolTransactions(address: string): Promise<Transaction
 export async function fetchDogeTransactions(address: string): Promise<Transaction[]> {
   if (!address || address.length < 26) return []
   try {
-    const res = await fetch(`/api/doge/transactions?address=${encodeURIComponent(address)}`)
+    const res = await fetch(apiUrl(`/api/doge/transactions?address=${encodeURIComponent(address)}`))
     if (!res.ok) return []
     const data = await res.json()
     if (!Array.isArray(data)) return []
@@ -123,7 +124,7 @@ export async function fetchDogeTransactions(address: string): Promise<Transactio
 export async function fetchLtcTransactions(address: string): Promise<Transaction[]> {
   if (!address || address.length < 26) return []
   try {
-    const res = await fetch(`/api/ltc/transactions?address=${encodeURIComponent(address)}`)
+    const res = await fetch(apiUrl(`/api/ltc/transactions?address=${encodeURIComponent(address)}`))
     if (!res.ok) return []
     const data = await res.json()
     if (!Array.isArray(data)) return []
@@ -137,7 +138,7 @@ export async function fetchLtcTransactions(address: string): Promise<Transaction
 export async function fetchEthTransactions(address: string): Promise<Transaction[]> {
   if (!address || address.length !== 42 || !address.startsWith('0x')) return []
   try {
-    const res = await fetch(`/api/eth/transactions?address=${encodeURIComponent(address)}`)
+    const res = await fetch(apiUrl(`/api/eth/transactions?address=${encodeURIComponent(address)}`))
     if (!res.ok) return []
     const data = await res.json()
     if (!Array.isArray(data)) return []
