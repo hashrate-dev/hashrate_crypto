@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 import type { User } from '../api/users'
+import { isSupabaseBackend } from '../lib/backendMode'
+import { loadUserFromSupabaseSession } from '../api/supabaseProfileLoader'
 
 const STORAGE_KEY = 'volt_user'
 
@@ -45,6 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(() => {
+    if (isSupabaseBackend()) {
+      void import('../lib/supabaseClient').then(({ getSupabase }) => {
+        void getSupabase().auth.signOut()
+      })
+    }
     setUserState(null)
     saveUser(null)
   }, [])
@@ -56,8 +63,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     saveUser(u)
   }, [])
 
-  // No confiar en localStorage: validar SIEMPRE con el servidor antes de considerar logueado
   useEffect(() => {
+    if (isSupabaseBackend()) {
+      let cancelled = false
+      const subHolder: { current?: { unsubscribe: () => void } } = {}
+      void import('../lib/supabaseClient').then(({ getSupabase }) => {
+        if (cancelled) return
+        const sb = getSupabase()
+        const applySession = async (session: { user: { id: string } } | null) => {
+          if (cancelled) return
+          if (!session?.user) {
+            setUserState(null)
+            saveUser(null)
+            setAuthChecked(true)
+            return
+          }
+          try {
+            const u = await loadUserFromSupabaseSession(sb, session.user.id)
+            if (cancelled) return
+            setUserState(u)
+            saveUser(u)
+          } catch {
+            if (cancelled) return
+            setUserState(null)
+            saveUser(null)
+          }
+          setAuthChecked(true)
+        }
+
+        void sb.auth.getSession().then(({ data: { session } }) => {
+          void applySession(session)
+        })
+
+        const {
+          data: { subscription },
+        } = sb.auth.onAuthStateChange((_event, session) => {
+          void applySession(session)
+        })
+        subHolder.current = subscription
+      })
+      return () => {
+        cancelled = true
+        subHolder.current?.unsubscribe()
+      }
+    }
+
     const stored = getStoredUser()
     if (!stored?.id) {
       setAuthChecked(true)
@@ -81,7 +131,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => {
         if (!cancelled) setAuthChecked(true)
       })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   return (

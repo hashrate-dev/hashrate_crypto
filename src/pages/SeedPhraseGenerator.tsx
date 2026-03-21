@@ -195,10 +195,10 @@ export function SeedPhraseGenerator() {
   }, [viewedPhrase])
 
   const showBtc = displayedAddresses?.btcAddress ?? user?.btcAddress ?? ''
-  const showUsdt = displayedAddresses?.usdtAddress ?? user?.usdtAddress ?? ''
   const showDoge = displayedAddresses?.dogeAddress ?? user?.dogeAddress ?? ''
   const showLtc = displayedAddresses?.ltcAddress ?? user?.ltcAddress ?? ''
-  const showEth = displayedAddresses?.ethAddress ?? user?.ethAddress ?? user?.usdtAddress ?? ''
+  /** Misma dirección 0x para ETH y USDT (ERC-20). */
+  const showEth = displayedAddresses?.ethAddress ?? user?.ethAddress ?? displayedAddresses?.usdtAddress ?? user?.usdtAddress ?? ''
   const showSol = displayedAddresses?.solAddress ?? user?.solAddress ?? ''
 
   return (
@@ -461,7 +461,7 @@ export function SeedPhraseGenerator() {
               >
                 {[
                   { label: 'Bitcoin', value: showBtc, key: 'btc' as const, copyFn: () => showBtc && copyLinked(showBtc, 'btc') },
-                  { label: 'Ethereum', value: showUsdt, key: 'eth' as const, copyFn: () => showUsdt && copyLinked(showUsdt, 'eth') },
+                  { label: 'Ethereum / USDT', value: showEth, key: 'eth' as const, copyFn: () => showEth && copyLinked(showEth, 'eth') },
                   { label: 'Dogecoin', value: showDoge, key: 'doge' as const, copyFn: () => showDoge && copyLinked(showDoge, 'doge') },
                   { label: 'Litecoin', value: showLtc, key: 'ltc' as const, copyFn: () => showLtc && copyLinked(showLtc, 'ltc') },
                   { label: 'Solana', value: showSol, key: 'sol' as const, copyFn: () => showSol && copyLinked(showSol, 'sol') },

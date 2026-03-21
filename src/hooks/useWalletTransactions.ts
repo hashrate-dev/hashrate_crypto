@@ -8,7 +8,7 @@ export function useWalletTransactions(): {
   transactions: Transaction[]
   loading: boolean
   error: string | null
-  refetch: () => void
+  refetch: () => Promise<void>
 } {
   const { btcAddress, solAddress, dogeAddress, ltcAddress, ethAddress } = useWalletAddresses()
   const [transactions, setTransactions] = useState<Transaction[]>([])

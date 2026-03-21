@@ -28,7 +28,7 @@ export function History() {
   const { transactions, loading, error, refetch } = useWalletTransactions()
   const { btcAddress, solAddress, dogeAddress, ltcAddress, ethAddress } = useWalletAddresses()
   const { currentPrices } = useAssetCharts()
-  const [refreshing, setRefreshing] = useState(false)
+  const [, setRefreshing] = useState(false)
 
   useEffect(() => {
     if (!solAddress) return

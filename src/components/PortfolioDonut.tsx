@@ -1,5 +1,7 @@
+import type { AssetType } from '../store/wallet'
+
 export interface PortfolioSegment {
-  asset: 'btc' | 'btc_lightning' | 'usdt' | 'doge'
+  asset: AssetType
   label: string
   amount: string
   valueUsd: number

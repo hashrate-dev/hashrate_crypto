@@ -58,8 +58,6 @@ export function Mercado() {
           const colors =
             asset.variant === 'btc'
               ? { up: 'rgb(34, 197, 94)', down: 'rgb(239, 68, 68)' }
-              : asset.variant === 'lightning'
-              ? { up: 'rgb(139, 92, 246)', down: 'rgb(239, 68, 68)' }
               : asset.variant === 'doge'
               ? { up: 'rgb(198, 166, 100)', down: 'rgb(239, 68, 68)' }
               : asset.variant === 'ltc'
@@ -87,8 +85,6 @@ export function Mercado() {
                   className={`w-14 h-14 rounded-xl flex items-center justify-center shrink-0 border border-white/10 ${
                     asset.variant === 'btc'
                       ? 'bg-btc/20'
-                      : asset.variant === 'lightning'
-                      ? 'bg-lightning/20'
                       : asset.variant === 'doge'
                       ? 'bg-amber-200/20'
                       : asset.variant === 'ltc'
@@ -107,7 +103,7 @@ export function Mercado() {
                   ) : asset.icon ? (
                     <span
                       className={`text-2xl font-bold ${
-                        asset.variant === 'btc' || asset.variant === 'lightning'
+                        asset.variant === 'btc'
                           ? 'text-btc'
                           : asset.variant === 'usdt'
                           ? 'text-emerald-400'

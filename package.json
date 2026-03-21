@@ -14,6 +14,7 @@
   "dependencies": {
     "@scure/bip32": "^2.0.1",
     "@solana/web3.js": "^1.98.4",
+    "@supabase/supabase-js": "^2.49.1",
     "bip39": "^3.1.0",
     "bitcoinjs-lib": "^7.0.1",
     "buffer": "^6.0.3",
@@ -26,6 +27,7 @@
     "lucide-react": "^0.460.0",
     "micro-ed25519-hdkey": "^0.1.2",
     "nodemailer": "^6.9.16",
+    "otplib": "^12.0.1",
     "qrcode.react": "^4.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

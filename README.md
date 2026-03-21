@@ -37,6 +37,14 @@ El repositorio incluye `vercel.json` con rewrites para **React Router** (SPA): c
 
 Copia variables desde `.env.example` si hace falta documentar en el repo.
 
+### Backend de datos en Supabase
+
+Podés mover **usuarios, perfiles, PIN, 2FA (secreto en BD), logs de acceso/swap/operaciones, snapshots y config Jupiter** a [Supabase](https://supabase.com) (Postgres + Auth), manteniendo **`VITE_API_URL`** solo para las rutas que siguen en Node (precios Binance, transacciones on-chain, Jupiter, LNbits, balances ETH/SOL, etc.).
+
+1. Ejecutá el SQL de `supabase/migrations/` (instrucciones en `supabase/README.md`).
+2. Desplegá la Edge Function `delete-account` para poder borrar la cuenta desde la app.
+3. En Vercel añadí `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` (Project Settings → API en tu proyecto Supabase).
+
 ## Stack
 
 - **React 18** + **TypeScript** + **Vite**

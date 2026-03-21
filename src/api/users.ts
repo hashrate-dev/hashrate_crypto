@@ -1,4 +1,6 @@
-import { apiUrl } from '../lib/apiBase'
+import { isSupabaseBackend } from '../lib/backendMode'
+import * as legacy from './usersLegacy'
+import * as sb from './usersSupabase'
 
 export interface RegisterPayload {
   email: string
@@ -38,40 +40,23 @@ export interface RegisterResponse {
   user: User
 }
 
-/** Mensaje cuando el backend no está en marcha (connection refused / failed to fetch). */
-export const BACKEND_NOT_RUNNING_MSG =
-  'No se pudo conectar con el API. En local: npm run dev. En producción (Vercel): configurá la variable VITE_API_URL con la URL pública de tu backend.'
+export const BACKEND_NOT_RUNNING_MSG = isSupabaseBackend()
+  ? sb.BACKEND_NOT_RUNNING_MSG_SB
+  : legacy.BACKEND_NOT_RUNNING_MSG_LEGACY
 
 export async function registerUser(data: RegisterPayload): Promise<RegisterResponse> {
-  try {
-    const res = await fetch(apiUrl('/api/register'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    })
-    const json = await parseJsonResponse(res)
-    if (!res.ok) throw new Error((json?.error as string) ?? 'Error al registrar')
-    return json as RegisterResponse
-  } catch (err) {
-    if (err instanceof Error && /failed to fetch|network error|connection refused|err_connection_refused/i.test(err.message)) {
-      throw new Error(BACKEND_NOT_RUNNING_MSG)
-    }
-    throw err
-  }
+  if (isSupabaseBackend()) return sb.registerUser(data)
+  return legacy.registerUser(data)
 }
 
 export async function getUserById(id: number): Promise<{ user: User }> {
-  const res = await fetch(apiUrl(`/api/users/${id}`))
-  const json = await res.json()
-  if (!res.ok) throw new Error(json?.error ?? 'Usuario no encontrado')
-  return json
+  if (isSupabaseBackend()) return sb.getUserById(id)
+  return legacy.getUserById(id)
 }
 
 export async function getUserByEmail(email: string): Promise<{ user: User }> {
-  const res = await fetch(apiUrl(`/api/users/by-email/${encodeURIComponent(email)}`))
-  const json = await res.json()
-  if (!res.ok) throw new Error(json?.error ?? 'Usuario no encontrado')
-  return json
+  if (isSupabaseBackend()) return sb.getUserByEmail(email)
+  return legacy.getUserByEmail(email)
 }
 
 export interface LoginPayload {
@@ -80,21 +65,8 @@ export interface LoginPayload {
 }
 
 export async function loginUser(data: LoginPayload): Promise<{ user: User }> {
-  try {
-    const res = await fetch(apiUrl('/api/login'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: data.email.trim(), password: data.password }),
-    })
-    const json = await parseJsonResponse(res)
-    if (!res.ok) throw new Error((json?.error as string) ?? 'Error al iniciar sesión')
-    return json as { user: User }
-  } catch (err) {
-    if (err instanceof Error && /failed to fetch|network error|connection refused|err_connection_refused/i.test(err.message)) {
-      throw new Error(BACKEND_NOT_RUNNING_MSG)
-    }
-    throw err
-  }
+  if (isSupabaseBackend()) return sb.loginUser(data)
+  return legacy.loginUser(data)
 }
 
 export interface UpdateUserPayload {
@@ -107,53 +79,18 @@ export interface UpdateUserPayload {
 }
 
 export async function updateUser(id: number, data: UpdateUserPayload): Promise<{ message: string; user: User }> {
-  const res = await fetch(apiUrl(`/api/users/${id}`), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-  const json = await res.json()
-  if (!res.ok) throw new Error(json?.error ?? 'Error al actualizar')
-  return json
-}
-
-async function parseJsonResponse(res: Response): Promise<Record<string, unknown>> {
-  const text = await res.text()
-  const contentType = res.headers.get('content-type') || ''
-  if (!contentType.includes('application/json') || text.trim().startsWith('<')) {
-    throw new Error(
-      'El servidor de usuarios no respondió. Comprobá que el backend esté en marcha: desde la raíz del proyecto ejecutá npm run dev:server, o desde la carpeta server ejecutá npm run dev.'
-    )
-  }
-  try {
-    return JSON.parse(text) as Record<string, unknown>
-  } catch {
-    throw new Error(
-      'El servidor de usuarios no respondió. Comprobá que el backend esté en marcha: desde la raíz del proyecto ejecutá npm run dev:server, o desde la carpeta server ejecutá npm run dev.'
-    )
-  }
+  if (isSupabaseBackend()) return sb.updateUser(id, data)
+  return legacy.updateUser(id, data)
 }
 
 export async function deleteUser(id: number): Promise<{ message: string }> {
-  const res = await fetch(apiUrl(`/api/users/${id}`), { method: 'DELETE' })
-  const json = await parseJsonResponse(res)
-  if (!res.ok) throw new Error((json?.error as string) ?? 'Error al eliminar la cuenta')
-  return json as { message: string }
+  if (isSupabaseBackend()) return sb.deleteUser(id)
+  return legacy.deleteUser(id)
 }
 
-/** Elimina la cuenta del usuario. Requiere contraseña para mayor seguridad. */
-export async function deleteUserWithPassword(
-  id: number,
-  password: string
-): Promise<{ message: string }> {
-  const res = await fetch(apiUrl(`/api/users/${id}`), {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password: password.trim() }),
-  })
-  const json = await parseJsonResponse(res)
-  if (!res.ok) throw new Error((json?.error as string) ?? 'Error al eliminar la cuenta')
-  return json as { message: string }
+export async function deleteUserWithPassword(id: number, password: string): Promise<{ message: string }> {
+  if (isSupabaseBackend()) return sb.deleteUserWithPassword(id, password)
+  return legacy.deleteUserWithPassword(id, password)
 }
 
 export interface ChangePasswordPayload {
@@ -163,35 +100,18 @@ export interface ChangePasswordPayload {
 }
 
 export async function changePassword(id: number, data: ChangePasswordPayload): Promise<{ message: string }> {
-  const body: Record<string, string> = { newPassword: data.newPassword }
-  if (data.pin != null) body.pin = data.pin
-  else if (data.currentPassword != null) body.currentPassword = data.currentPassword
-  const res = await fetch(apiUrl(`/api/users/${id}/password`), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  const json = await parseJsonResponse(res)
-  if (!res.ok) throw new Error((json?.error as string) ?? 'Error al cambiar la contraseña')
-  return json as { message: string }
+  if (isSupabaseBackend()) return sb.changePassword(id, data)
+  return legacy.changePassword(id, data)
 }
 
 export async function setUserPin(id: number, pin: string): Promise<{ message: string }> {
-  const res = await fetch(apiUrl(`/api/users/${id}/pin`), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pin }),
-  })
-  const json = await parseJsonResponse(res)
-  if (!res.ok) throw new Error((json?.error as string) ?? 'Error al guardar el PIN')
-  return json as { message: string }
+  if (isSupabaseBackend()) return sb.setUserPin(id, pin)
+  return legacy.setUserPin(id, pin)
 }
 
 export async function clearUserPin(id: number): Promise<{ message: string }> {
-  const res = await fetch(apiUrl(`/api/users/${id}/pin`), { method: 'DELETE' })
-  const json = await parseJsonResponse(res)
-  if (!res.ok) throw new Error((json?.error as string) ?? 'Error al eliminar el PIN')
-  return json as { message: string }
+  if (isSupabaseBackend()) return sb.clearUserPin(id)
+  return legacy.clearUserPin(id)
 }
 
 export interface UpdateWalletsPayload {
@@ -206,82 +126,50 @@ export interface UpdateWalletsPayload {
   password?: string
 }
 
-export async function updateUserWallets(id: number, data: UpdateWalletsPayload): Promise<{ message: string; user: User }> {
-  const res = await fetch(apiUrl(`/api/users/${id}/wallets`), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-  const json = await res.json()
-  if (!res.ok) throw new Error((json?.error as string) ?? 'Error al vincular las direcciones')
-  return json as { message: string; user: User }
+export async function updateUserWallets(
+  id: number,
+  data: UpdateWalletsPayload
+): Promise<{ message: string; user: User }> {
+  if (isSupabaseBackend()) return sb.updateUserWallets(id, data)
+  return legacy.updateUserWallets(id, data)
 }
 
 export async function getEncryptedSeed(id: number): Promise<{ encryptedSeed: string; seedSalt: string }> {
-  const res = await fetch(apiUrl(`/api/users/${id}/encrypted-seed`))
-  const json = await res.json()
-  if (!res.ok) throw new Error((json?.error as string) ?? 'Error al obtener la frase')
-  return json as { encryptedSeed: string; seedSalt: string }
+  if (isSupabaseBackend()) return sb.getEncryptedSeed(id)
+  return legacy.getEncryptedSeed(id)
 }
 
-/** Generar código de pago Lightning (factura BOLT11) para recibir. Como en Binance: factura con QR. */
+/** LNbits sigue yendo al API Node / Edge proxy (VITE_API_URL). */
 export async function createLightningInvoice(
   id: number,
   options?: { amountSats?: number; description?: string }
 ): Promise<{ invoice: string; expiresIn?: number }> {
-  const res = await fetch(apiUrl(`/api/users/${id}/lightning-invoice`), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      amountSats: options?.amountSats,
-      description: options?.description,
-    }),
-  })
-  const json = await parseJsonResponse(res)
-  if (!res.ok) throw new Error((json?.error as string) ?? 'Error al generar el código de pago')
-  return json as { invoice: string; expiresIn?: number }
+  return legacy.createLightningInvoice(id, options)
 }
 
-/** Google Authenticator: obtener secreto y URL para QR (no activa hasta enable). */
 export async function getTotpSetup(id: number): Promise<{ secret: string; otpauthUrl: string }> {
-  const res = await fetch(apiUrl(`/api/users/${id}/totp-setup`))
-  const json = await res.json()
-  if (!res.ok) throw new Error((json?.error as string) ?? 'Error al generar 2FA')
-  return json as { secret: string; otpauthUrl: string }
+  if (isSupabaseBackend()) return sb.getTotpSetup(id)
+  return legacy.getTotpSetup(id)
 }
 
-/** Activar 2FA: enviar secret + código de 6 dígitos. */
-export async function enableTotp(id: number, secret: string, token: string): Promise<{ message: string; user: User }> {
-  const res = await fetch(apiUrl(`/api/users/${id}/totp-enable`), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ secret, token }),
-  })
-  const json = await res.json()
-  if (!res.ok) throw new Error((json?.error as string) ?? 'Error al activar 2FA')
-  return json as { message: string; user: User }
+export async function enableTotp(
+  id: number,
+  secret: string,
+  token: string
+): Promise<{ message: string; user: User }> {
+  if (isSupabaseBackend()) return sb.enableTotp(id, secret, token)
+  return legacy.enableTotp(id, secret, token)
 }
 
-/** Verificar código TOTP (para enviar fondos). */
 export async function verifyTotp(id: number, token: string): Promise<{ ok: boolean }> {
-  const res = await fetch(apiUrl(`/api/users/${id}/totp-verify`), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
-  })
-  const json = await res.json()
-  if (!res.ok) throw new Error((json?.error as string) ?? 'Código incorrecto')
-  return json as { ok: boolean }
+  if (isSupabaseBackend()) return sb.verifyTotp(id, token)
+  return legacy.verifyTotp(id, token)
 }
 
-/** Desactivar 2FA. Requiere contraseña. */
-export async function disableTotp(id: number, password: string): Promise<{ message: string; user: User }> {
-  const res = await fetch(apiUrl(`/api/users/${id}/totp-disable`), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password }),
-  })
-  const json = await res.json()
-  if (!res.ok) throw new Error((json?.error as string) ?? 'Error al desactivar 2FA')
-  return json as { message: string; user: User }
+export async function disableTotp(
+  id: number,
+  password: string
+): Promise<{ message: string; user: User }> {
+  if (isSupabaseBackend()) return sb.disableTotp(id, password)
+  return legacy.disableTotp(id, password)
 }
