@@ -45,10 +45,14 @@ export async function registerUser(data: RegisterPayload): Promise<RegisterRespo
     },
   })
   if (error) {
-    if (/already registered|already been registered|User already/i.test(error.message)) {
+    const em = error.message || ''
+    if (/invalid api key|invalid jwt/i.test(em)) {
+      throw new Error(messageForInvalidApiKey())
+    }
+    if (/already registered|already been registered|User already/i.test(em)) {
       throw new Error('Ya existe un usuario con ese email.')
     }
-    throw new Error(error.message || 'Error al registrar')
+    throw new Error(em || 'Error al registrar')
   }
   if (!authData.user) throw new Error('No se pudo crear el usuario.')
   if (!authData.session) {
@@ -63,6 +67,38 @@ export async function registerUser(data: RegisterPayload): Promise<RegisterRespo
   }
 }
 
+/** Mensaje legible según respuesta de Auth (el navegador puede mostrar 401 en /auth/v1/token). */
+function messageForInvalidApiKey(): string {
+  return (
+    'Clave de Supabase inválida (Invalid API key). En el cliente solo sirve: **Publishable** (sb_publishable_…) o **anon** JWT (eyJ…). ' +
+    'No uses **Secret** (sb_secret_…), **service_role** ni el JWT service en el navegador (dan 401). ' +
+    'Dashboard → Settings → API: pestaña API Keys o Legacy API Keys. En Vercel: VITE_SUPABASE_ANON_KEY para **Production** + **Redeploy**. ' +
+    'Probá https://TU-SITIO.vercel.app/api/public-config y compará con el dashboard.'
+  )
+}
+
+function messageForSupabaseLoginError(err: { message: string }): string {
+  const m = err.message.toLowerCase()
+  if (m.includes('invalid api key') || m.includes('invalid jwt')) {
+    return messageForInvalidApiKey()
+  }
+  if (m.includes('invalid login credentials') || m.includes('invalid_grant')) {
+    return (
+      'Email o contraseña incorrectos, o el usuario no existe en Supabase Auth. ' +
+      'Si antes entrabas con el servidor Node (users.json), esa cuenta no está en Supabase: registrate de nuevo o creá el usuario en Supabase → Authentication → Users.'
+    )
+  }
+  if (m.includes('email not confirmed')) {
+    return (
+      'Tenés que confirmar el email (revisá la bandeja) o desactivá “Confirm email” en Supabase → Authentication → Providers → Email.'
+    )
+  }
+  if (m.includes('too many requests') || m.includes('rate limit')) {
+    return 'Demasiados intentos. Esperá unos minutos y volvé a probar.'
+  }
+  return err.message || 'No se pudo iniciar sesión.'
+}
+
 export async function loginUser(data: LoginPayload): Promise<{ user: User }> {
   const sb = getSupabase()
   const { data: authData, error } = await sb.auth.signInWithPassword({
@@ -70,7 +106,7 @@ export async function loginUser(data: LoginPayload): Promise<{ user: User }> {
     password: data.password,
   })
   if (error || !authData.user) {
-    throw new Error('Email o contraseña incorrectos.')
+    throw new Error(error ? messageForSupabaseLoginError(error) : 'Email o contraseña incorrectos.')
   }
   const row = await loadProfileWithRepair(sb, authData.user.id)
   const { error: logErr } = await sb.from('access_log').insert({

@@ -1,9 +1,14 @@
+import { getResolvedApiBase } from './runtimeBackendConfig'
+
 /**
  * Base URL del backend Node (sin barra final).
  * - En local: no definas nada → peticiones relativas `/api/...` y Vite hace proxy al puerto 3001.
  * - En Vercel (u otro hosting del front): define `VITE_API_URL=https://tu-api.com` en el panel de build.
+ * - También puede venir de `/api/public-config` si solo configuraste `API_URL` (sin VITE_).
  */
 export function getApiBase(): string {
+  const fromRuntime = getResolvedApiBase().trim()
+  if (fromRuntime) return fromRuntime.replace(/\/$/, '')
   const v = import.meta.env.VITE_API_URL
   if (v == null || String(v).trim() === '') return ''
   return String(v).trim().replace(/\/$/, '')

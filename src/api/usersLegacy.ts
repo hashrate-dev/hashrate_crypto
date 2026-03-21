@@ -19,7 +19,17 @@ export const BACKEND_NOT_RUNNING_MSG_LEGACY =
 function requireApiBaseInProduction(): void {
   if (import.meta.env.PROD && !getApiBase()) {
     throw new Error(
-      'Falta configurar el backend en Vercel: añadí VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY (recomendado), o VITE_API_URL apuntando a tu servidor Node. Luego redeploy del proyecto.'
+      [
+        'El registro/login intentó usar el servidor Node (/api), pero no hay backend configurado en este sitio.',
+        '',
+        'En Vercel → Settings → Environment Variables (Production), usá cualquiera de estos nombres:',
+        '  • VITE_SUPABASE_URL o SUPABASE_URL = https://TU_REF.supabase.co',
+        '  • VITE_SUPABASE_ANON_KEY o SUPABASE_ANON_KEY = clave anon public (eyJ…)',
+        'Tras guardar: Redeploy. También podés usar VITE_API_URL o API_URL si tenés backend Node.',
+        '',
+        'Nota: si usaste SUPABASE_* sin VITE_, el sitio las carga vía /api/public-config (incluido en el deploy).',
+        'Guía: docs/VERCEL-ENV.md',
+      ].join('\n')
     )
   }
 }

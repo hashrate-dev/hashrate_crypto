@@ -40,9 +40,13 @@ export interface RegisterResponse {
   user: User
 }
 
-export const BACKEND_NOT_RUNNING_MSG = isSupabaseBackend()
-  ? sb.BACKEND_NOT_RUNNING_MSG_SB
-  : legacy.BACKEND_NOT_RUNNING_MSG_LEGACY
+/** Mensaje según modo backend actual (tras loadRuntimeBackendConfig en prod). */
+export function getBackendNotRunningMessage(): string {
+  return isSupabaseBackend() ? sb.BACKEND_NOT_RUNNING_MSG_SB : legacy.BACKEND_NOT_RUNNING_MSG_LEGACY
+}
+
+/** Valor al primer import de este módulo (después del bootstrap en main). Preferí `getBackendNotRunningMessage()` si importás users antes del arranque. */
+export const BACKEND_NOT_RUNNING_MSG = getBackendNotRunningMessage()
 
 export async function registerUser(data: RegisterPayload): Promise<RegisterResponse> {
   if (isSupabaseBackend()) return sb.registerUser(data)

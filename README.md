@@ -32,8 +32,12 @@ El repositorio incluye `vercel.json` con rewrites para **React Router** (SPA): c
 
 1. En [Vercel](https://vercel.com) → proyecto (ej. **hashrate-crypto**) → **Connect Git** con el mismo repo de GitHub.
 2. **Framework Preset**: Vite. **Build Command**: `npm run build`. **Output Directory**: `dist`.
-3. **Environment Variables** → añade **`VITE_API_URL`** con la URL pública de tu backend Node (sin `/` al final), por ejemplo `https://api.tudominio.com`. El front no incluye el servidor: login, saldos, Jupiter, monitor, etc. van a ese API.
-4. El backend debe tener **CORS** permitiendo el origen de tu app (`*.vercel.app` y dominio propio si aplica). En este repo el servidor usa `cors({ origin: true })`, que refleja el origen.
+3. **Settings → Environment Variables** (obligatorio para que el login funcione):
+   - **Con Supabase:** `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (Project Settings → API en Supabase). Los nombres deben ser **exactos** y el prefijo **`VITE_`** es obligatorio.
+   - **Con backend Node:** `VITE_API_URL` = raíz del API (sin `/api` al final), ej. `https://api.tudominio.com`.
+   - Marcá **Production** (y **Preview** si usás deploys de preview). **Después de guardar, hacé Redeploy** — si no, el build no incluye las variables.
+4. Guía detallada: **[docs/VERCEL-ENV.md](docs/VERCEL-ENV.md)**.
+5. El backend Node debe tener **CORS** permitiendo el origen de tu app (`*.vercel.app` y dominio propio si aplica). En este repo el servidor usa `cors({ origin: true })`, que refleja el origen.
 
 Copia variables desde `.env.example` si hace falta documentar en el repo.
 
